@@ -493,8 +493,75 @@ export class View3D {
     this.camera.quaternion.copy(quaternion)
   }
 
-  /** Where the orbit camera should be to see the whole plan from its current direction. */
-  private framing(): { position: Vector3; target: Vector3 } {
+  /**
+   * A picture of the whole plan, `width` by `height` CSS pixels drawn at `ratio` times that,
+   * seen the way the orbit view shows it: walls facing the camera lowered, no grid and no
+   * selection. Returns a JPEG data URL, or `null` for a plan with nothing in it. Works while
+   * the view is hidden, and leaves the view as it was.
+   */
+  snapshot(options: {
+    width: number
+    height: number
+    ratio?: number
+    quality?: number
+  }): string | null {
+    if (this.disposed) return null
+    if (this.floorplan.corners.length === 0 && this.floorplan.items.length === 0) return null
+    const { width, height, ratio = 2, quality = 0.85 } = options
+
+    // A hidden view holds its scenes back; bring them up to date for the picture.
+    this.planScene.setActive(true)
+    this.itemScene.setActive(true)
+    const selection = this.selection.current
+    this.planScene.setSelection(null)
+    this.itemScene.setSelection(null)
+    this.grid.visible = false
+
+    // Framed for the picture's shape, from the orbit direction, even while walking.
+    const camera = this.camera.clone()
+    camera.aspect = width / height
+    camera.fov = ORBIT_FOV
+    const { position, target } = this.framing({
+      aspect: camera.aspect,
+      from: this.orbitBeforeWalk ?? {
+        position: this.camera.position,
+        target: this.controls.target,
+      },
+    })
+    camera.position.copy(position)
+    camera.lookAt(target)
+    camera.updateProjectionMatrix()
+    this.updateCutaway(camera.position, true)
+
+    const previousRatio = this.renderer.getPixelRatio()
+    const size = this.renderer.getSize(new Vector2())
+    this.renderer.setPixelRatio(ratio)
+    this.renderer.setSize(width, height, false)
+    this.renderer.render(this.scene, camera)
+    // Read straight after drawing, before the browser may clear the buffer.
+    const url = this.canvas.toDataURL('image/jpeg', quality)
+
+    this.renderer.setPixelRatio(previousRatio)
+    this.renderer.setSize(size.x, size.y, false)
+    this.grid.visible = true
+    this.planScene.setSelection(selection)
+    this.itemScene.setSelection(selection)
+    this.planScene.setActive(this.visible)
+    this.itemScene.setActive(this.visible)
+    // Back to the normal picture, with the cut-away walls lowered again.
+    this.render()
+    return url
+  }
+
+  /**
+   * Where the orbit camera should be to see the whole plan, by default from its current
+   * direction and for the canvas's shape.
+   */
+  private framing(
+    options: { aspect?: number; from?: { position: Vector3; target: Vector3 } } = {},
+  ): { position: Vector3; target: Vector3 } {
+    const aspect = options.aspect ?? this.camera.aspect
+    const from = options.from ?? { position: this.camera.position, target: this.controls.target }
     const bounds = boundingBox(this.floorplan.corners)
     if (!bounds) return { position: DEFAULT_CAMERA_POSITION.clone(), target: new Vector3() }
 
@@ -508,12 +575,12 @@ export class View3D {
     )
     // The narrower of the vertical and horizontal half-angles decides how far back to stand.
     const vertical = (ORBIT_FOV * Math.PI) / 360
-    const horizontal = Math.atan(Math.tan(vertical) * this.camera.aspect)
+    const horizontal = Math.atan(Math.tan(vertical) * aspect)
     const distance = Math.min(
       (radius / Math.sin(Math.min(vertical, horizontal))) * 1.15,
       this.controls.maxDistance,
     )
-    const direction = this.camera.position.clone().sub(this.controls.target)
+    const direction = from.position.clone().sub(from.target)
     if (direction.lengthSq() === 0) direction.copy(DEFAULT_CAMERA_POSITION)
     direction.normalize()
     return { position: target.clone().addScaledVector(direction, distance), target }
@@ -588,10 +655,15 @@ export class View3D {
     this.renderer.render(this.scene, this.camera)
   }
 
-  /** Lowers the walls that stand between the orbit camera and a room, and raises the rest. */
-  private updateCutaway(): void {
-    const lowered =
-      this.mode === 'orbit' ? wallsFacingCamera(this.floorplan, toPlan(this.camera.position)) : null
+  /**
+   * Lowers the walls that stand between the orbit camera and a room, and raises the rest.
+   * Walking, nothing is lowered.
+   */
+  private updateCutaway(
+    cameraPosition: Vector3 = this.camera.position,
+    lower = this.mode === 'orbit',
+  ): void {
+    const lowered = lower ? wallsFacingCamera(this.floorplan, toPlan(cameraPosition)) : null
     // The wall of the selected door or window stays up, so what is being edited can be seen.
     const selected = this.selection.current
     if (lowered && selected?.kind === 'opening') {
