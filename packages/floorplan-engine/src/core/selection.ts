@@ -1,7 +1,7 @@
 import { Emitter, type Listener } from './events.js'
 
-/** What is selected: a corner, a wall or an item, by id. */
-export type Selection = { kind: 'corner' | 'wall' | 'item'; id: string } | null
+/** What is selected: a corner, a wall, an item, or a door or window, by id. */
+export type Selection = { kind: 'corner' | 'wall' | 'item' | 'opening'; id: string } | null
 
 export type SelectionEvents = {
   change: Selection

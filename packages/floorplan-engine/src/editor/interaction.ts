@@ -4,6 +4,13 @@ import { Floorplan, FloorplanError } from '../model/floorplan.js'
 import { distance, type Point } from '../model/geometry.js'
 import { ItemCatalog } from '../model/item-catalog.js'
 import { defaultPlacementSettings, placeItem, type PlacementSettings } from '../model/placement.js'
+import {
+  defaultOpeningSnapSettings,
+  nearestWall,
+  nextDoorSwing,
+  snapOpeningOffset,
+  type OpeningSnapSettings,
+} from '../model/wall-openings.js'
 import { hitTest, rotateHandlePosition, type Hit } from './hit-testing.js'
 import { snapPoint, toGrid, type SnapSettings, type SnapTarget } from './snapping.js'
 import type { Viewport } from './viewport.js'
@@ -19,7 +26,14 @@ export interface InteractionOptions {
   selection?: SelectionStore
   /** Wall and grid snapping for items. */
   placement?: PlacementSettings
+  /** Snapping for doors and windows dragged along a wall. */
+  openingSnap?: OpeningSnapSettings
 }
+
+/** A dragged opening jumps to another wall when the pointer comes this close to it. Metres. */
+const SWITCH_WALL_DISTANCE = 0.3
+/** ...and that wall is nearer than the opening's own wall by at least this much. Metres. */
+const SWITCH_WALL_MARGIN = 0.15
 
 /** Rotation by hand moves in steps of this many radians, unless `Alt` is held. */
 export const ROTATION_STEP = Math.PI / 12
@@ -70,6 +84,8 @@ type Gesture =
     }
   | { type: 'dragItem'; id: string; offset: Point; rotation: number }
   | { type: 'rotateItem'; id: string }
+  /** `grab` is how far the opening's middle is from where it was grabbed, along its wall. */
+  | { type: 'dragOpening'; id: string; grab: number }
 
 /**
  * The editor's input logic: modes, selection, drawing and dragging. It takes pointer input in
@@ -81,6 +97,7 @@ export class Interaction {
   readonly snapping: SnapSettings
   readonly catalog: ItemCatalog
   readonly placement: PlacementSettings
+  readonly openingSnap: OpeningSnapSettings
 
   private readonly selectionStore: SelectionStore
   private readonly stopWatchingSelection: () => void
@@ -103,6 +120,7 @@ export class Interaction {
     this.snapping = snapping
     this.catalog = options.catalog ?? new ItemCatalog()
     this.placement = options.placement ?? { ...defaultPlacementSettings }
+    this.openingSnap = options.openingSnap ?? { ...defaultOpeningSnapSettings }
     this.selectionStore = options.selection ?? new SelectionStore()
     this.stopWatchingSelection = this.selectionStore.on('change', (selection) => {
       this.emitter.emit('selection', selection)
@@ -136,6 +154,11 @@ export class Interaction {
 
   get hover(): Hit {
     return this.currentHover
+  }
+
+  /** The id of the door or window being dragged, if any. */
+  get draggedOpening(): string | null {
+    return this.gesture.type === 'dragOpening' ? this.gesture.id : null
   }
 
   /** True while the pointer is over the selected item's rotate handle. */
@@ -237,6 +260,11 @@ export class Interaction {
       return
     }
 
+    if (gesture.type === 'dragOpening') {
+      this.dragOpening(gesture, input)
+      return
+    }
+
     if (gesture.type === 'rotateItem') {
       const item = this.floorplan.getItem(gesture.id)
       if (!item) return
@@ -315,6 +343,9 @@ export class Interaction {
       case 'r':
       case 'R':
         return this.turnSelectedItem(Math.PI / 2)
+      case 'f':
+      case 'F':
+        return this.flipSelectedDoor()
       default:
         return false
     }
@@ -345,10 +376,67 @@ export class Interaction {
     return true
   }
 
-  private remove(target: NonNullable<Hit>): void {
+  /**
+   * Steps the selected door to its next way of hanging: the hinge changes ends, then the swing
+   * changes sides. Returns whether a door was selected.
+   */
+  flipSelectedDoor(): boolean {
+    const selection = this.selectionStore.current
+    if (selection?.kind !== 'opening') return false
+    const opening = this.floorplan.getOpening(selection.id)
+    if (opening?.kind !== 'door') return false
+    this.floorplan.updateOpening(opening.id, nextDoorSwing(opening))
+    return true
+  }
+
+  private remove(target: NonNullable<Selection>): void {
     if (target.kind === 'corner') this.floorplan.removeCorner(target.id)
     else if (target.kind === 'wall') this.floorplan.removeWall(target.id)
+    else if (target.kind === 'opening') this.floorplan.removeOpening(target.id)
     else this.floorplan.removeItem(target.id)
+  }
+
+  /** Slides a dragged opening along its wall, or moves it to another wall the pointer is nearer to. */
+  private dragOpening(
+    gesture: Extract<Gesture, { type: 'dragOpening' }>,
+    input: PointerInput,
+  ): void {
+    const { floorplan } = this
+    const opening = floorplan.getOpening(gesture.id)
+    const ownWall = opening && floorplan.getWall(opening.wallId)
+    if (!opening || !ownWall) return
+    const own = nearestWall(input.world, {
+      walls: [ownWall],
+      getCorner: (id) => floorplan.getCorner(id),
+    })
+    const nearest = nearestWall(input.world, floorplan)
+    if (!own || !nearest) return
+
+    const snap = input.altKey ? { ...this.openingSnap, enabled: false } : this.openingSnap
+    const moveTo = (wallId: string, along: number): boolean => {
+      const wall = floorplan.getWall(wallId)!
+      const start = floorplan.getCorner(wall.start)!
+      const end = floorplan.getCorner(wall.end)!
+      const offset = snapOpeningOffset(along, distance(start, end), snap)
+      try {
+        floorplan.updateOpening(opening.id, { wallId, offset })
+        return true
+      } catch (error) {
+        // No room for it there: it stays where it is.
+        if (!(error instanceof FloorplanError)) throw error
+        return false
+      }
+    }
+
+    const switches =
+      nearest.wallId !== opening.wallId &&
+      nearest.distance < SWITCH_WALL_DISTANCE &&
+      nearest.distance + SWITCH_WALL_MARGIN < own.distance
+    if (switches && moveTo(nearest.wallId, nearest.along)) {
+      gesture.grab = 0
+      return
+    }
+    moveTo(opening.wallId, own.along + gesture.grab)
   }
 
   private click(input: PointerInput, hit: Hit): void {
@@ -406,6 +494,21 @@ export class Interaction {
         id: hit.id,
         offset: { x: item.position.x - start.world.x, y: item.position.y - start.world.y },
         rotation: item.rotation,
+      }
+      this.select(hit)
+      return
+    }
+    if (this.currentMode === 'move' && hit?.kind === 'opening') {
+      const opening = this.floorplan.getOpening(hit.id)!
+      const wall = this.floorplan.getWall(opening.wallId)!
+      const grabbed = nearestWall(start.world, {
+        walls: [wall],
+        getCorner: (id) => this.floorplan.getCorner(id),
+      })
+      this.gesture = {
+        type: 'dragOpening',
+        id: hit.id,
+        grab: grabbed ? opening.offset - grabbed.along : 0,
       }
       this.select(hit)
       return

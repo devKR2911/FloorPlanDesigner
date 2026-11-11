@@ -1,6 +1,8 @@
 import type { Floorplan } from '../model/floorplan.js'
 import { distance, type Point } from '../model/geometry.js'
 import { itemOutline } from '../model/item-geometry.js'
+import { openingOutline } from '../model/wall-openings.js'
+import type { Opening } from '../schema/plan.js'
 import type { ItemSize } from '../schema/item-definition.js'
 import type { Hit } from './hit-testing.js'
 import type { DrawPreview, Selection } from './interaction.js'
@@ -22,6 +24,10 @@ export interface EditorTheme {
   itemSelected: string
   /** Items that overlap a wall or another item. */
   itemOverlap: string
+  /** The lines of a door or window. */
+  opening: string
+  /** A door or window that does not fit its wall. */
+  openingUnfit: string
   corner: string
   cornerStroke: string
   cornerHover: string
@@ -47,6 +53,8 @@ export const defaultTheme: EditorTheme = {
   itemHover: 'rgba(37, 99, 235, 0.18)',
   itemSelected: 'rgba(29, 78, 216, 0.25)',
   itemOverlap: 'rgba(220, 38, 38, 0.3)',
+  opening: '#3f3f46',
+  openingUnfit: '#dc2626',
   corner: '#ffffff',
   cornerStroke: '#3f3f46',
   cornerHover: '#2563eb',
@@ -70,6 +78,10 @@ export interface RenderState {
   /** Where the selected item's rotate handle is, in world coordinates, if an item is selected. */
   rotateHandle: Point | null
   rotateHandleHover: boolean
+  /** Ids of the doors and windows that do not fit their wall. */
+  unfitOpenings: ReadonlySet<string>
+  /** The door or window being dragged, which shows its distances to the ends of its wall. */
+  draggedOpening: string | null
 }
 
 /** Scale above which the 0.1 m grid lines are drawn. */
@@ -98,6 +110,7 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   drawRooms(ctx, state)
   drawItems(ctx, state)
   drawWalls(ctx, state)
+  drawOpenings(ctx, state)
   drawDimensions(ctx, state)
   drawCorners(ctx, state)
   drawPreview(ctx, state)
@@ -215,6 +228,132 @@ function drawWalls(ctx: CanvasRenderingContext2D, state: RenderState): void {
     tracePolygon(ctx, wallBand(start, end, wall.thickness, viewport))
     ctx.fill()
   }
+}
+
+/** How many straight pieces a door's swing arc is drawn with. */
+const ARC_STEPS = 16
+
+function drawOpenings(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const { floorplan, viewport, theme, hover, selection, unfitOpenings, draggedOpening } = state
+  for (const opening of floorplan.openings) {
+    const wall = floorplan.getWall(opening.wallId)
+    const start = wall && floorplan.getCorner(wall.start)
+    const end = wall && floorplan.getCorner(wall.end)
+    if (!wall || !start || !end) continue
+    const outline = openingOutline(opening, start, end, wall.thickness)
+    if (outline.length === 0) continue
+    const screen = outline.map((p) => viewport.toScreen(p))
+    const selected = selection?.kind === 'opening' && selection.id === opening.id
+    const hovered = hover?.kind === 'opening' && hover.id === opening.id
+    const unfit = unfitOpenings.has(opening.id)
+    ctx.strokeStyle = unfit
+      ? theme.openingUnfit
+      : selected
+        ? theme.wallSelected
+        : hovered
+          ? theme.wallHover
+          : theme.opening
+    ctx.lineWidth = selected || hovered ? 2 : 1.5
+
+    if (unfit) {
+      // Not cut into the wall: only an outline marks where it would be.
+      tracePolygon(ctx, screen)
+      ctx.stroke()
+      continue
+    }
+
+    // The gap in the wall, closed at both ends.
+    ctx.fillStyle = theme.background
+    tracePolygon(ctx, screen)
+    ctx.fill()
+    ctx.stroke()
+
+    if (opening.kind === 'window') {
+      // Two lines along the wall, a third of its thickness apart.
+      for (const t of [1 / 3, 2 / 3]) {
+        const from = between(screen[0]!, screen[3]!, t)
+        const to = between(screen[1]!, screen[2]!, t)
+        ctx.beginPath()
+        ctx.moveTo(from.x, from.y)
+        ctx.lineTo(to.x, to.y)
+        ctx.stroke()
+      }
+    } else {
+      drawDoorSwing(ctx, viewport, opening, outline)
+    }
+
+    if (opening.id === draggedOpening) {
+      const length = distance(start, end)
+      const along = (u: number): Point => ({
+        x: start.x + ((end.x - start.x) * u) / length,
+        y: start.y + ((end.y - start.y) * u) / length,
+      })
+      const from = opening.offset - opening.width / 2
+      const to = opening.offset + opening.width / 2
+      const sides = floorplan.roomsOf(wall.id)
+      // On the side the wall's own length is not written on.
+      const side = sides.front && !sides.back ? 1 : -1
+      ctx.fillStyle = theme.preview
+      drawLabel(ctx, viewport, start, along(from), formatLength(from), side, wall.thickness)
+      drawLabel(ctx, viewport, along(to), end, formatLength(length - to), side, wall.thickness)
+    }
+  }
+}
+
+/**
+ * Draws a door's leaf, open at a right angle from its hinge, and the quarter circle its edge
+ * sweeps. `outline` is the opening's outline: back start, back end, front end, front start.
+ */
+function drawDoorSwing(
+  ctx: CanvasRenderingContext2D,
+  viewport: Viewport,
+  door: Readonly<Opening>,
+  outline: Point[],
+): void {
+  const [backStart, backEnd, frontEnd, frontStart] = outline as [Point, Point, Point, Point]
+  const front = door.swing === 'front'
+  // The hinge is on the face the door opens towards; the latch is at the other end of that face.
+  const nearStart = front ? frontStart : backStart
+  const nearEnd = front ? frontEnd : backEnd
+  const hinge = door.hinge === 'start' ? nearStart : nearEnd
+  const latch = door.hinge === 'start' ? nearEnd : nearStart
+  const closed = { x: latch.x - hinge.x, y: latch.y - hinge.y }
+  // Out of the wall on the swing side, the same length as the door is wide.
+  const across = front
+    ? { x: frontStart.x - backStart.x, y: frontStart.y - backStart.y }
+    : { x: backStart.x - frontStart.x, y: backStart.y - frontStart.y }
+  const thickness = Math.hypot(across.x, across.y)
+  const scale = thickness > 0 ? door.width / thickness : 0
+  const open = { x: across.x * scale, y: across.y * scale }
+
+  const hingeScreen = viewport.toScreen(hinge)
+  const tip = viewport.toScreen({ x: hinge.x + open.x, y: hinge.y + open.y })
+  ctx.save()
+  ctx.lineWidth = 2.5
+  ctx.beginPath()
+  ctx.moveTo(hingeScreen.x, hingeScreen.y)
+  ctx.lineTo(tip.x, tip.y)
+  ctx.stroke()
+  ctx.restore()
+
+  ctx.save()
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  for (let i = 0; i <= ARC_STEPS; i++) {
+    const angle = (i / ARC_STEPS) * (Math.PI / 2)
+    const p = viewport.toScreen({
+      x: hinge.x + closed.x * Math.cos(angle) + open.x * Math.sin(angle),
+      y: hinge.y + closed.y * Math.cos(angle) + open.y * Math.sin(angle),
+    })
+    if (i === 0) ctx.moveTo(p.x, p.y)
+    else ctx.lineTo(p.x, p.y)
+  }
+  ctx.stroke()
+  ctx.restore()
+}
+
+function between(a: Point, b: Point, t: number): Point {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
 }
 
 /** The four screen corners of a wall drawn at its real thickness, at least `MIN_WALL_PIXELS` wide. */

@@ -5,6 +5,7 @@ import { boundingBox } from '../model/geometry.js'
 import { ItemCatalog } from '../model/item-catalog.js'
 import { findOverlaps } from '../model/item-geometry.js'
 import type { PlacementSettings } from '../model/placement.js'
+import { unfitOpenings, type OpeningSnapSettings } from '../model/wall-openings.js'
 import { rotateHandlePosition, type Hit } from './hit-testing.js'
 import { Interaction, type EditorMode, type PointerInput, type Selection } from './interaction.js'
 import { defaultTheme, render, type EditorTheme } from './renderer.js'
@@ -23,6 +24,8 @@ export interface PlanEditorOptions {
   selection?: SelectionStore
   /** Wall and grid snapping for items. */
   placement?: PlacementSettings
+  /** Snapping for doors and windows dragged along a wall. */
+  openingSnap?: OpeningSnapSettings
 }
 
 export type PlanEditorEvents = {
@@ -75,6 +78,7 @@ export class PlanEditor {
       catalog: this.catalog,
       ...(options.selection && { selection: options.selection }),
       ...(options.placement && { placement: options.placement }),
+      ...(options.openingSnap && { openingSnap: options.openingSnap }),
     })
 
     this.cleanups.push(
@@ -155,6 +159,11 @@ export class PlanEditor {
 
   deleteSelection(): boolean {
     return this.interaction.deleteSelection()
+  }
+
+  /** Steps the selected door to its next way of hanging. Returns whether a door was selected. */
+  flipSelectedDoor(): boolean {
+    return this.interaction.flipSelectedDoor()
   }
 
   /** Turns the selected item counter-clockwise by `angle` radians. */
@@ -282,6 +291,8 @@ export class PlanEditor {
           )
         : null,
       rotateHandleHover: this.interaction.overRotateHandle,
+      unfitOpenings: unfitOpenings(this.floorplan),
+      draggedOpening: this.interaction.draggedOpening,
     })
   }
 

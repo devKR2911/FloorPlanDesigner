@@ -1,6 +1,7 @@
 import type { Floorplan } from '../model/floorplan.js'
 import { distance, distanceToSegment, type Point } from '../model/geometry.js'
 import { itemAt, itemAxes } from '../model/item-geometry.js'
+import { openingAt } from '../model/wall-openings.js'
 import type { Item } from '../schema/plan.js'
 import type { ItemSize } from '../schema/item-definition.js'
 
@@ -8,16 +9,17 @@ export type Hit =
   | { kind: 'corner'; id: string }
   | { kind: 'wall'; id: string }
   | { kind: 'item'; id: string }
+  | { kind: 'opening'; id: string }
   | null
 
 /** How far, in pixels, the rotate handle sits beyond the front of the selected item. */
 export const ROTATE_HANDLE_OFFSET = 22
 
 /**
- * What is under a world point: the nearest corner within `tolerance` metres, else an item whose
- * outline contains the point, else the nearest wall within `tolerance` of its band, else
- * nothing. Corners win so a shared end stays grabbable; items win over walls so an item pushed
- * against a wall can still be picked up.
+ * What is under a world point: the nearest corner within `tolerance` metres, else a door or
+ * window whose gap contains the point, else an item whose outline contains it, else the nearest
+ * wall within `tolerance` of its band, else nothing. Corners win so a shared end stays
+ * grabbable; openings and items win over walls, which they sit in or against.
  */
 export function hitTest(
   point: Point,
@@ -35,6 +37,9 @@ export function hitTest(
     }
   }
   if (best) return best
+
+  const opening = openingAt(point, floorplan, tolerance / 2)
+  if (opening) return { kind: 'opening', id: opening }
 
   if (sizeOf) {
     const item = itemAt(point, floorplan, sizeOf)
