@@ -16,9 +16,16 @@ export interface EditorTheme {
   axis: string
   roomFill: string
   roomLabel: string
+  /** The wall's centre line, which is what corners sit on and what is drawn and dragged. */
   wall: string
   wallHover: string
   wallSelected: string
+  /** The thickness of a wall, either side of its centre line. */
+  wallFill: string
+  wallHoverFill: string
+  wallSelectedFill: string
+  /** The wall's two faces and its free ends. */
+  wallEdge: string
   item: string
   itemStroke: string
   itemHover: string
@@ -46,9 +53,13 @@ export const defaultTheme: EditorTheme = {
   axis: '#b4b4b9',
   roomFill: 'rgba(59, 130, 246, 0.08)',
   roomLabel: '#52525b',
-  wall: '#3f3f46',
+  wall: '#18181b',
   wallHover: '#2563eb',
   wallSelected: '#1d4ed8',
+  wallFill: '#e4e4e7',
+  wallHoverFill: '#dbe6fb',
+  wallSelectedFill: '#cfdcf8',
+  wallEdge: '#a1a1aa',
   item: 'rgba(161, 161, 170, 0.35)',
   itemStroke: '#52525b',
   itemHover: 'rgba(37, 99, 235, 0.18)',
@@ -92,7 +103,11 @@ export interface RenderState {
 
 /** Scale above which the 0.1 m grid lines are drawn. */
 const MINOR_GRID_MIN_SCALE = 60
-const MIN_WALL_PIXELS = 2
+/** Below this many pixels thick, a wall is drawn as its centre line only. */
+const MIN_WALL_PIXELS = 3
+const WALL_LINE_WIDTH = 2
+const WALL_LINE_WIDTH_ACTIVE = 2.5
+const WALL_EDGE_WIDTH = 1
 const CORNER_RADIUS = 4
 const CORNER_RADIUS_ACTIVE = 6
 const DIMENSION_OFFSET = 14
@@ -225,32 +240,79 @@ function drawRotateHandle(ctx: CanvasRenderingContext2D, state: RenderState): vo
   ctx.stroke()
 }
 
+/**
+ * Draws every wall as a solid centre line with its thickness in light grey either side, edged
+ * by its faces. All the bands go down first and the lines on top, so where walls meet the
+ * centre lines run unbroken to the corner.
+ */
 function drawWalls(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { floorplan, viewport, theme, hover, selection } = state
   // Each wall's outline once it is joined to its neighbours, so corners close without a notch.
   const footprints = new Map(
     wallFootprints(floorplan.corners, floorplan.walls).map((footprint) => [
       footprint.wallId,
-      footprint.polygon,
+      footprint,
     ]),
   )
-  for (const wall of floorplan.walls) {
-    const start = floorplan.getCorner(wall.start)!
-    const end = floorplan.getCorner(wall.end)!
-    const selected = selection?.kind === 'wall' && selection.id === wall.id
-    const hovered = hover?.kind === 'wall' && hover.id === wall.id
-    ctx.fillStyle = selected ? theme.wallSelected : hovered ? theme.wallHover : theme.wall
-    const footprint = footprints.get(wall.id)
-    // Zoomed far out, a wall is drawn as a band of a least width so that it stays visible.
-    const tooThin = wall.thickness * viewport.scale < MIN_WALL_PIXELS
+  const walls = floorplan.walls.map((wall) => ({
+    wall,
+    start: viewport.toScreen(floorplan.getCorner(wall.start)!),
+    end: viewport.toScreen(floorplan.getCorner(wall.end)!),
+    selected: selection?.kind === 'wall' && selection.id === wall.id,
+    hovered: hover?.kind === 'wall' && hover.id === wall.id,
+    footprint: footprints.get(wall.id),
+    // Zoomed far out, the band is too thin to see and only the centre line is drawn.
+    banded: wall.thickness * viewport.scale >= MIN_WALL_PIXELS,
+  }))
+
+  for (const { footprint, banded, selected, hovered } of walls) {
+    if (!footprint || !banded) continue
+    ctx.fillStyle = selected
+      ? theme.wallSelectedFill
+      : hovered
+        ? theme.wallHoverFill
+        : theme.wallFill
     tracePolygon(
       ctx,
-      footprint && !tooThin
-        ? footprint.map((point) => viewport.toScreen(point))
-        : wallBand(start, end, wall.thickness, viewport),
+      footprint.polygon.map((point) => viewport.toScreen(point)),
     )
     ctx.fill()
   }
+
+  // The faces and free ends, but not the joins, so neighbouring walls read as one band.
+  ctx.strokeStyle = theme.wallEdge
+  ctx.lineWidth = WALL_EDGE_WIDTH
+  ctx.beginPath()
+  for (const { footprint, banded } of walls) {
+    if (!footprint || !banded) continue
+    const points = footprint.polygon.map((point) => viewport.toScreen(point))
+    footprint.edges.forEach((edge, i) => {
+      if (edge === 'join') return
+      const from = points[i]!
+      const to = points[(i + 1) % points.length]!
+      ctx.moveTo(from.x, from.y)
+      ctx.lineTo(to.x, to.y)
+    })
+  }
+  ctx.stroke()
+
+  ctx.save()
+  ctx.lineCap = 'round'
+  // Selected and hovered walls last, so their colour is not covered by a neighbour's line.
+  const order = [...walls].sort((a, b) => rank(a) - rank(b))
+  for (const { start, end, selected, hovered } of order) {
+    ctx.strokeStyle = selected ? theme.wallSelected : hovered ? theme.wallHover : theme.wall
+    ctx.lineWidth = selected || hovered ? WALL_LINE_WIDTH_ACTIVE : WALL_LINE_WIDTH
+    ctx.beginPath()
+    ctx.moveTo(start.x, start.y)
+    ctx.lineTo(end.x, end.y)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function rank({ selected, hovered }: { selected: boolean; hovered: boolean }): number {
+  return selected ? 2 : hovered ? 1 : 0
 }
 
 /** How many straight pieces a door's swing arc is drawn with. */
@@ -285,11 +347,30 @@ function drawOpenings(ctx: CanvasRenderingContext2D, state: RenderState): void {
       continue
     }
 
-    // The gap in the wall, closed at both ends.
+    // The gap in the wall, which also cuts the centre line.
     ctx.fillStyle = theme.background
     tracePolygon(ctx, screen)
     ctx.fill()
-    ctx.stroke()
+    const active = selected || hovered
+    ctx.save()
+    if (!active) {
+      ctx.strokeStyle = theme.wallEdge
+      ctx.lineWidth = WALL_EDGE_WIDTH
+    }
+    if (active || opening.kind === 'window') {
+      // A window's frame runs along both faces; a highlighted opening is outlined all round.
+      ctx.stroke()
+    } else {
+      // A door's gap is closed only at its two ends, where the wall stops.
+      const [backStart, backEnd, frontEnd, frontStart] = screen as [Point, Point, Point, Point]
+      ctx.beginPath()
+      ctx.moveTo(backEnd.x, backEnd.y)
+      ctx.lineTo(frontEnd.x, frontEnd.y)
+      ctx.moveTo(frontStart.x, frontStart.y)
+      ctx.lineTo(backStart.x, backStart.y)
+      ctx.stroke()
+    }
+    ctx.restore()
 
     if (opening.kind === 'window') {
       // Two lines along the wall, a third of its thickness apart.
@@ -377,23 +458,6 @@ function drawDoorSwing(
 
 function between(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
-}
-
-/** The four screen corners of a wall drawn at its real thickness, at least `MIN_WALL_PIXELS` wide. */
-function wallBand(start: Point, end: Point, thickness: number, viewport: Viewport): Point[] {
-  const a = viewport.toScreen(start)
-  const b = viewport.toScreen(end)
-  const length = distance(a, b)
-  if (length === 0) return []
-  const half = Math.max(thickness * viewport.scale, MIN_WALL_PIXELS) / 2
-  const nx = (-(b.y - a.y) / length) * half
-  const ny = ((b.x - a.x) / length) * half
-  return [
-    { x: a.x + nx, y: a.y + ny },
-    { x: b.x + nx, y: b.y + ny },
-    { x: b.x - nx, y: b.y - ny },
-    { x: a.x - nx, y: a.y - ny },
-  ]
 }
 
 function drawDimensions(ctx: CanvasRenderingContext2D, state: RenderState): void {
