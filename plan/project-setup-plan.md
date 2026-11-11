@@ -10,7 +10,7 @@ Each phase has its own file. A phase starts only after its own go-ahead.
 | ----- | ---------------------------------------------------------------- | ----------- |
 | 0     | [Project setup](phase-0-project-setup.md)                        | Done        |
 | 1     | [Engine data model](phase-1-engine-data-model.md)                | Done        |
-| 2     | [2D plan editor](phase-2-2d-editor.md)                           | Not started |
+| 2     | [2D plan editor](phase-2-2d-editor.md)                           | Done        |
 | 3     | [3D view](phase-3-3d-view.md)                                    | Not started |
 | 4     | [Catalogue and furniture](phase-4-catalogue-and-furniture.md)    | Not started |
 | 5     | [Doors and windows](phase-5-doors-and-windows.md)                | Not started |
