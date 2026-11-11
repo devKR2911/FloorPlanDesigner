@@ -202,20 +202,55 @@ export class Floorplan {
   /**
    * Moves a corner. Landing within tolerance of another corner merges the two, keeping the
    * other corner. Landing on a wall moves the corner onto the wall and splits it.
+   *
+   * With `resolve: false` the corner only moves; call `resolveCorner()` afterwards. A drag uses
+   * this so a corner carried across another corner does not merge with it on the way past.
    */
-  moveCorner(id: string, x: number, y: number): void {
+  moveCorner(id: string, x: number, y: number, options: { resolve?: boolean } = {}): void {
     const corner = this.requireCorner(id)
     corner.x = x
     corner.y = y
-
-    const target = this.cornerNear(corner, corner)
-    if (target) {
-      this.mergeCorners(corner, target)
-      this.commit('walls')
+    if (options.resolve === false) {
+      this.commit('corners')
       return
     }
-    const split = this.splitWallUnder(corner)
-    this.commit(split ? 'walls' : 'corners')
+    this.commit(this.resolve(corner) ? 'walls' : 'corners')
+  }
+
+  /**
+   * Applies the merge or split a corner's position calls for, after a move with `resolve: false`.
+   * Returns the id of the corner now at that position: the other corner after a merge, else the
+   * same id. Emits a change only if something was merged or split.
+   */
+  resolveCorner(id: string): string {
+    const corner = this.requireCorner(id)
+    const target = this.cornerNear(corner, corner)
+    if (this.resolve(corner)) this.commit('walls')
+    return target ? target.id : id
+  }
+
+  /**
+   * Moves several corners by the same offset as one operation, for example both ends of a wall.
+   * Each corner is then resolved, unless `resolve: false`.
+   */
+  moveCorners(
+    ids: readonly string[],
+    dx: number,
+    dy: number,
+    options: { resolve?: boolean } = {},
+  ): void {
+    const corners = ids.map((id) => this.requireCorner(id))
+    for (const corner of corners) {
+      corner.x += dx
+      corner.y += dy
+    }
+    let wallsChanged = false
+    if (options.resolve !== false) {
+      for (const corner of corners) {
+        if (this.cornerMap.has(corner.id) && this.resolve(corner)) wallsChanged = true
+      }
+    }
+    this.commit(wallsChanged ? 'walls' : 'corners')
   }
 
   /** Removes a corner and every wall at it, then any corner those walls leave stranded. */
@@ -275,6 +310,16 @@ export class Floorplan {
       }
     }
     return best
+  }
+
+  /** Merges the corner into one it sits on, or splits a wall it sits on. Returns whether walls changed. */
+  private resolve(corner: Corner): boolean {
+    const target = this.cornerNear(corner, corner)
+    if (target) {
+      this.mergeCorners(corner, target)
+      return true
+    }
+    return this.splitWallUnder(corner)
   }
 
   /** Folds `dropped` into `survivor`: walls are re-pointed, and self-joins and duplicates removed. */

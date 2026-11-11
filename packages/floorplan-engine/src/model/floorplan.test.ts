@@ -182,6 +182,52 @@ describe('moving corners', () => {
   it('refuses an unknown corner', () => {
     expect(() => loaded().moveCorner('nope', 0, 0)).toThrow(FloorplanError)
   })
+
+  it('does not merge or split until resolved when asked not to', () => {
+    const fp = loaded()
+    const changes: FloorplanChange[] = []
+    fp.on('change', (change) => changes.push(change))
+
+    // Carry c across d and leave it on top of d: no merge yet.
+    fp.moveCorner('c', 0, 4, { resolve: false })
+    expect(fp.corners).toHaveLength(4)
+    expect(changes).toEqual([{ kind: 'corners', roomsChanged: false }])
+
+    // Resolving merges into d and reports d as the corner at that position.
+    expect(fp.resolveCorner('c')).toBe('d')
+    expect(fp.getCorner('c')).toBeUndefined()
+    expect(pairs(fp)).toEqual(['a-b', 'a-d', 'b-d'])
+    expect(changes).toHaveLength(2)
+    expect(changes[1]).toEqual({ kind: 'walls', roomsChanged: true })
+  })
+
+  it('resolving a corner that sits on nothing changes nothing and stays quiet', () => {
+    const fp = loaded()
+    const listener = vi.fn()
+    fp.on('change', listener)
+    expect(fp.resolveCorner('c')).toBe('c')
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('moves several corners together as one change', () => {
+    const fp = loaded()
+    const changes: FloorplanChange[] = []
+    fp.on('change', (change) => changes.push(change))
+    fp.moveCorners(['c', 'd'], 0, 2)
+    expect(fp.getCorner('c')).toEqual({ id: 'c', x: 4, y: 6 })
+    expect(fp.getCorner('d')).toEqual({ id: 'd', x: 0, y: 6 })
+    expect(fp.rooms[0]!.area).toBe(24)
+    expect(changes).toEqual([{ kind: 'corners', roomsChanged: false }])
+  })
+
+  it('resolves each corner after moving several', () => {
+    const fp = loaded()
+    // Move the top wall down onto the bottom one: c lands on b and d on a.
+    fp.moveCorners(['c', 'd'], 0, -4)
+    expect(fp.corners.map((corner) => corner.id).sort()).toEqual(['a', 'b'])
+    expect(pairs(fp)).toEqual(['a-b'])
+    expect(planSchema.safeParse(fp.export()).success).toBe(true)
+  })
 })
 
 describe('removing', () => {
