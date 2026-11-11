@@ -11,6 +11,7 @@
     "dev": "pnpm build:packages && concurrently -k -n engine,shared,api,web -c blue,magenta,green,cyan \"pnpm --filter @floorplandesigner/engine dev\" \"pnpm --filter @floorplandesigner/shared dev\" \"pnpm --filter @floorplandesigner/api dev\" \"pnpm --filter @floorplandesigner/web dev\"",
     "build": "pnpm -r build",
     "test": "pnpm build:packages && pnpm -r test",
+    "e2e": "pnpm build:packages && pnpm --filter @floorplandesigner/e2e e2e",
     "typecheck": "pnpm build:packages && pnpm -r typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",

@@ -1,0 +1,17 @@
+{
+  "name": "@floorplandesigner/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "End-to-end tests: the whole app in a browser, against its own database.",
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@floorplandesigner/engine": "workspace:*",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}
