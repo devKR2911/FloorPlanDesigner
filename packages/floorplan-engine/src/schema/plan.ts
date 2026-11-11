@@ -37,15 +37,37 @@ export const itemSchema = z.object({
   rotation: z.number(),
 })
 
+/**
+ * A door or window: a rectangular opening cut through one wall. Lengths are in metres.
+ * `front` is the left side of the wall, walking from its start corner to its end corner.
+ */
+export const openingSchema = z.object({
+  id: idSchema,
+  wallId: idSchema,
+  kind: z.enum(['door', 'window']),
+  /** Distance along the wall from its start corner to the middle of the opening. */
+  offset: z.number(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+  /** Height of the bottom of the opening above the floor. 0 for doors. */
+  sill: z.number().min(0),
+  /** Doors: which end of the opening the leaf hangs from, the one nearer the wall's start or end. */
+  hinge: z.enum(['start', 'end']),
+  /** Doors: which side of the wall the leaf opens to. */
+  swing: z.enum(['front', 'back']),
+})
+
 export const planSchema = z
   .object({
     version: z.literal(PLAN_FORMAT_VERSION),
     corners: z.array(cornerSchema),
     walls: z.array(wallSchema),
     items: z.array(itemSchema),
+    /** Missing in plans saved before doors and windows existed, which have none. */
+    openings: z.array(openingSchema).default([]),
   })
   .superRefine((plan, ctx) => {
-    const reportDuplicates = (key: 'corners' | 'walls' | 'items') => {
+    const reportDuplicates = (key: 'corners' | 'walls' | 'items' | 'openings') => {
       const seen = new Set<string>()
       plan[key].forEach((entry, index) => {
         if (seen.has(entry.id)) {
@@ -61,8 +83,19 @@ export const planSchema = z
     reportDuplicates('corners')
     reportDuplicates('walls')
     reportDuplicates('items')
+    reportDuplicates('openings')
 
     const cornerIds = new Set(plan.corners.map((corner) => corner.id))
+    const wallIds = new Set(plan.walls.map((wall) => wall.id))
+    plan.openings.forEach((opening, index) => {
+      if (!wallIds.has(opening.wallId)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Unknown wall "${opening.wallId}"`,
+          path: ['openings', index, 'wallId'],
+        })
+      }
+    })
     const joinedPairs = new Set<string>()
     plan.walls.forEach((wall, index) => {
       const pair = [wall.start, wall.end].sort().join('\u0000')
@@ -96,8 +129,10 @@ export const planSchema = z
 export type Corner = z.infer<typeof cornerSchema>
 export type Wall = z.infer<typeof wallSchema>
 export type Item = z.infer<typeof itemSchema>
+export type Opening = z.infer<typeof openingSchema>
+export type OpeningKind = Opening['kind']
 export type Plan = z.infer<typeof planSchema>
 
 export function createEmptyPlan(): Plan {
-  return { version: PLAN_FORMAT_VERSION, corners: [], walls: [], items: [] }
+  return { version: PLAN_FORMAT_VERSION, corners: [], walls: [], items: [], openings: [] }
 }

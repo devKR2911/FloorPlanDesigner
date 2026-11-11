@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { catalogManifestSchema, type CatalogItem } from './catalog.js'
 import { createPlanRequestSchema, updatePlanRequestSchema } from './plans.js'
 
+// As saved before doors and windows existed: with no `openings` list.
 const emptyDocument = { version: 1, corners: [], walls: [], items: [] }
 
 const sofa: CatalogItem = {
@@ -18,7 +19,7 @@ describe('createPlanRequestSchema', () => {
   it('trims the name and keeps the document', () => {
     expect(createPlanRequestSchema.parse({ name: '  Flat  ', document: emptyDocument })).toEqual({
       name: 'Flat',
-      document: emptyDocument,
+      document: { ...emptyDocument, openings: [] },
     })
   })
 

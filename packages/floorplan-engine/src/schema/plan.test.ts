@@ -9,6 +9,19 @@ const validPlan: Plan = {
   ],
   walls: [{ id: 'w1', start: 'c1', end: 'c2', thickness: 0.1, height: 2.5 }],
   items: [{ id: 'i1', catalogKey: 'sofa', position: { x: 1, y: 1 }, elevation: 0, rotation: 0 }],
+  openings: [
+    {
+      id: 'o1',
+      wallId: 'w1',
+      kind: 'door',
+      offset: 2,
+      width: 0.9,
+      height: 2.1,
+      sill: 0,
+      hinge: 'start',
+      swing: 'front',
+    },
+  ],
 }
 
 function issuePaths(input: unknown): string[] {
@@ -31,6 +44,22 @@ describe('planSchema', () => {
 
   it('rejects a missing section', () => {
     expect(issuePaths({ version: 1, corners: [], walls: [] })).toEqual(['items'])
+  })
+
+  it('reads a plan saved before doors and windows existed as having none', () => {
+    const older: Partial<Plan> = { ...validPlan }
+    delete older.openings
+    expect(planSchema.parse(older)).toEqual({ ...validPlan, openings: [] })
+  })
+
+  it('rejects an opening on a wall that does not exist', () => {
+    const plan = { ...validPlan, openings: [{ ...validPlan.openings[0], wallId: 'missing' }] }
+    expect(issuePaths(plan)).toEqual(['openings.0.wallId'])
+  })
+
+  it('rejects two openings with the same id', () => {
+    const plan = { ...validPlan, openings: [validPlan.openings[0], validPlan.openings[0]] }
+    expect(issuePaths(plan)).toEqual(['openings.1.id'])
   })
 
   it('rejects a wall that points at a corner that does not exist', () => {

@@ -26,5 +26,26 @@ export { FALLBACK_ITEM_SIZE, ItemCatalog } from './item-catalog.js'
 export type { ItemCatalogEvents } from './item-catalog.js'
 export { defaultPlacementSettings, placeItem } from './placement.js'
 export type { PlacementResult, PlacementSettings } from './placement.js'
+export {
+  OPENING_DEFAULTS,
+  OPENING_END_MARGIN,
+  OPENING_GAP,
+  OPENING_TOP_MARGIN,
+  defaultOpeningSnapSettings,
+  fitOffset,
+  fitsUnderTop,
+  nearestWall,
+  nextDoorSwing,
+  openingAt,
+  openingCentre,
+  openingOutline,
+  projectOntoWall,
+  snapOpeningOffset,
+  unfitOpenings,
+  wallClearSpans,
+} from './wall-openings.js'
+export type { OpeningHost, OpeningSnapSettings, WallProjection, WallSpan } from './wall-openings.js'
+export { WALKER_RADIUS, moveWalker, wallBlocks } from './walk-collision.js'
+export type { WallBlock } from './walk-collision.js'
 export * from './geometry.js'
 export * from '../schema/index.js'

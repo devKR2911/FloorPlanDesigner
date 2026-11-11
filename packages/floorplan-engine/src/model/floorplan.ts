@@ -4,6 +4,8 @@ import {
   planSchema,
   type Corner,
   type Item,
+  type Opening,
+  type OpeningKind,
   type Plan,
   type Wall,
 } from '../schema/plan.js'
@@ -17,6 +19,14 @@ import {
 } from './geometry.js'
 import { normalizeAngle } from './item-geometry.js'
 import { findRooms, type WallSide } from './rooms.js'
+import {
+  OPENING_DEFAULTS,
+  fitOffset,
+  fitsUnderTop,
+  openingCentre,
+  projectOntoWall,
+  wallClearSpans,
+} from './wall-openings.js'
 
 export interface FloorplanOptions {
   /** Corners closer than this are the same corner, and a corner this close to a wall sits on it. Metres. */
@@ -43,12 +53,13 @@ export interface Room {
   readonly centroid: Point
 }
 
-export type FloorplanChangeKind = 'load' | 'corners' | 'walls' | 'items'
+export type FloorplanChangeKind = 'load' | 'corners' | 'walls' | 'items' | 'openings'
 
 export interface FloorplanChange {
   /**
    * `walls` when the set of walls changed (corners may have changed too), `corners` when only
-   * corners did, and `items` when only items did.
+   * corners did, `items` when only items did, and `openings` when only doors or windows did.
+   * A `corners` or `walls` change may also move the openings on the walls it touched.
    */
   kind: FloorplanChangeKind
   /** True when the set of rooms changed. A room that only changed shape keeps its id and does not count. */
@@ -77,6 +88,13 @@ export class Floorplan {
   private readonly cornerMap = new Map<string, Corner>()
   private readonly wallMap = new Map<string, Wall>()
   private readonly itemMap = new Map<string, Item>()
+  private readonly openingMap = new Map<string, Opening>()
+  /**
+   * Where each opening wants to be on the plan. When a wall moves, its openings are put back as
+   * near to these points as the wall allows, so a wall dragged short and long again gets its
+   * door back where it was.
+   */
+  private readonly openingAnchors = new Map<string, Point>()
   private roomList: Room[] = []
   private roomMap = new Map<string, Room>()
   private wallSideMap = new Map<string, Partial<Record<WallSide, string>>>()
@@ -118,6 +136,22 @@ export class Floorplan {
     return this.itemMap.get(id)
   }
 
+  /** The doors and windows of every wall. */
+  get openings(): readonly Readonly<Opening>[] {
+    return [...this.openingMap.values()]
+  }
+
+  getOpening(id: string): Readonly<Opening> | undefined {
+    return this.openingMap.get(id)
+  }
+
+  /** The doors and windows of one wall, in order from its start corner. */
+  openingsOf(wallId: string): readonly Readonly<Opening>[] {
+    return this.openings
+      .filter((opening) => opening.wallId === wallId)
+      .sort((a, b) => a.offset - b.offset)
+  }
+
   getRoom(id: string): Room | undefined {
     return this.roomMap.get(id)
   }
@@ -156,6 +190,8 @@ export class Floorplan {
     for (const wall of plan.walls) this.wallMap.set(wall.id, { ...wall })
     this.itemMap.clear()
     for (const item of structuredClone(plan.items)) this.itemMap.set(item.id, item)
+    this.openingMap.clear()
+    for (const opening of plan.openings) this.openingMap.set(opening.id, { ...opening })
     this.commit('load')
   }
 
@@ -166,6 +202,7 @@ export class Floorplan {
       corners: [...this.cornerMap.values()],
       walls: [...this.wallMap.values()],
       items: [...this.itemMap.values()],
+      openings: [...this.openingMap.values()],
     })
   }
 
@@ -253,6 +290,15 @@ export class Floorplan {
       corner.x += dx
       corner.y += dy
     }
+    // A wall moved as a whole carries its doors and windows with it.
+    const moved = new Set(ids)
+    for (const opening of this.openingMap.values()) {
+      const wall = this.wallMap.get(opening.wallId)
+      const anchor = this.openingAnchors.get(opening.id)
+      if (wall && anchor && moved.has(wall.start) && moved.has(wall.end)) {
+        this.openingAnchors.set(opening.id, { x: anchor.x + dx, y: anchor.y + dy })
+      }
+    }
     let wallsChanged = false
     if (options.resolve !== false) {
       for (const corner of corners) {
@@ -327,6 +373,178 @@ export class Floorplan {
     this.requireItem(id)
     this.itemMap.delete(id)
     this.commit('items')
+  }
+
+  /**
+   * Adds a door or window to a wall and returns its id. It is placed as near to `offset` as it
+   * fits: inside the wall's usable stretch and clear of the wall's other openings. Throws a
+   * `FloorplanError` if the wall has no room for it.
+   */
+  addOpening(input: {
+    wallId: string
+    kind: OpeningKind
+    /** Distance along the wall from its start corner to the middle of the opening. */
+    offset: number
+    width?: number
+    height?: number
+    sill?: number
+    hinge?: Opening['hinge']
+    swing?: Opening['swing']
+  }): string {
+    const defaults = OPENING_DEFAULTS[input.kind]
+    const opening: Opening = {
+      id: newId(),
+      wallId: input.wallId,
+      kind: input.kind,
+      offset: input.offset,
+      width: input.width ?? defaults.width,
+      height: input.height ?? defaults.height,
+      sill: input.sill ?? defaults.sill,
+      hinge: input.hinge ?? 'start',
+      swing: input.swing ?? 'front',
+    }
+    opening.offset = this.fitOpening(opening)
+    this.openingMap.set(opening.id, opening)
+    this.anchorOpening(opening)
+    this.commit('openings')
+    return opening.id
+  }
+
+  /**
+   * Moves, resizes or flips a door or window; `wallId` moves it to another wall. The result is
+   * fitted as in `addOpening()`. Throws a `FloorplanError`, changing nothing, if it cannot fit.
+   */
+  updateOpening(
+    id: string,
+    changes: Partial<
+      Pick<Opening, 'wallId' | 'offset' | 'width' | 'height' | 'sill' | 'hinge' | 'swing'>
+    >,
+  ): void {
+    const opening = this.requireOpening(id)
+    const candidate: Opening = { ...opening }
+    for (const [key, value] of Object.entries(changes)) {
+      if (value !== undefined) Object.assign(candidate, { [key]: value })
+    }
+    candidate.offset = this.fitOpening(candidate)
+    Object.assign(opening, candidate)
+    this.anchorOpening(opening)
+    this.commit('openings')
+  }
+
+  removeOpening(id: string): void {
+    this.requireOpening(id)
+    this.openingMap.delete(id)
+    this.openingAnchors.delete(id)
+    this.commit('openings')
+  }
+
+  private requireOpening(id: string): Opening {
+    const opening = this.openingMap.get(id)
+    if (!opening) throw new FloorplanError(`Unknown opening "${id}"`)
+    return opening
+  }
+
+  /** The offset at which an opening fits its wall, nearest to the one it asks for. */
+  private fitOpening(opening: Opening): number {
+    const wall = this.requireWall(opening.wallId)
+    for (const name of ['width', 'height'] as const) {
+      if (!(opening[name] > 0) || !Number.isFinite(opening[name])) {
+        throw new FloorplanError(`An opening's ${name} must be a positive number`)
+      }
+    }
+    if (!(opening.sill >= 0) || !Number.isFinite(opening.sill)) {
+      throw new FloorplanError("An opening's sill must be zero or more")
+    }
+    if (!Number.isFinite(opening.offset)) {
+      throw new FloorplanError("An opening's offset must be a number")
+    }
+    if (!fitsUnderTop(opening, wall.height)) {
+      throw new FloorplanError('The opening is too tall for its wall')
+    }
+    const span = wallClearSpans(this.corners, this.walls).get(wall.id)
+    const others = this.openingsOf(wall.id).filter((other) => other.id !== opening.id)
+    const offset = span ? fitOffset(opening.offset, opening.width, span, others) : null
+    if (offset === null) throw new FloorplanError('The wall has no room for the opening')
+    return offset
+  }
+
+  /** Records where an opening is now as where it wants to be. */
+  private anchorOpening(opening: Opening): void {
+    const wall = this.wallMap.get(opening.wallId)
+    const start = wall && this.cornerMap.get(wall.start)
+    const end = wall && this.cornerMap.get(wall.end)
+    if (start && end) this.openingAnchors.set(opening.id, openingCentre(opening, start, end))
+  }
+
+  /**
+   * After corners or walls changed, puts every opening back on a wall as near to its anchor as
+   * it fits. An opening whose wall is gone moves to a wall that now runs through its anchor (the
+   * other half of a split), or is removed with its wall. One that no longer fits is left where
+   * it is; `unfitOpenings()` reports it.
+   */
+  private rehomeOpenings(kind: FloorplanChangeKind): void {
+    if (this.openingMap.size === 0) return
+    if (kind !== 'load') {
+      for (const opening of [...this.openingMap.values()]) {
+        const anchor = this.openingAnchors.get(opening.id)
+        if (!anchor) continue
+        const wall = this.wallMap.get(opening.wallId)
+        const own = wall && this.projectOnto(wall, anchor)
+        if (own && own.along >= 0 && own.along <= own.length) {
+          opening.offset = own.along
+          continue
+        }
+        const other = this.wallThrough(anchor, opening.wallId)
+        if (other) {
+          opening.wallId = other.wallId
+          opening.offset = other.along
+        } else if (own) {
+          // Its wall no longer reaches the anchor: wait at the nearer end.
+          opening.offset = Math.min(Math.max(own.along, 0), own.length)
+        } else {
+          this.openingMap.delete(opening.id)
+          this.openingAnchors.delete(opening.id)
+        }
+      }
+      const spans = wallClearSpans(this.corners, this.walls)
+      for (const wall of this.wallMap.values()) {
+        const span = spans.get(wall.id)
+        if (!span) continue
+        const placed: Opening[] = []
+        for (const opening of this.openingsOf(wall.id) as Opening[]) {
+          const offset = fitOffset(opening.offset, opening.width, span, placed)
+          if (offset !== null) opening.offset = offset
+          placed.push(opening)
+        }
+      }
+    }
+    // A plain corner move keeps the anchors, so that moving the corner back restores the openings.
+    if (kind !== 'corners') {
+      for (const opening of this.openingMap.values()) this.anchorOpening(opening)
+    }
+  }
+
+  private projectOnto(wall: Wall, point: Point) {
+    const start = this.cornerMap.get(wall.start)
+    const end = this.cornerMap.get(wall.end)
+    return start && end ? projectOntoWall(point, start, end) : undefined
+  }
+
+  /** A wall, other than `exceptId`, whose centreline passes through a point. */
+  private wallThrough(point: Point, exceptId: string): { wallId: string; along: number } | null {
+    for (const wall of this.wallMap.values()) {
+      if (wall.id === exceptId) continue
+      const projection = this.projectOnto(wall, point)
+      if (
+        projection &&
+        projection.distance < 1e-3 &&
+        projection.along >= 0 &&
+        projection.along <= projection.length
+      ) {
+        return { wallId: wall.id, along: projection.along }
+      }
+    }
+    return null
   }
 
   private requireItem(id: string): Item {
@@ -443,11 +661,12 @@ export class Floorplan {
   }
 
   private commit(kind: FloorplanChangeKind): void {
-    // Items never change the walls, so the rooms stay as they are.
-    if (kind === 'items') {
+    // Items and openings never change the walls, so the rooms stay as they are.
+    if (kind === 'items' || kind === 'openings') {
       this.emitter.emit('change', { kind, roomsChanged: false })
       return
     }
+    this.rehomeOpenings(kind)
     const previousRoomIds = this.roomList.map((room) => room.id).join('|')
     this.recomputeRooms()
     const roomsChanged = previousRoomIds !== this.roomList.map((room) => room.id).join('|')
