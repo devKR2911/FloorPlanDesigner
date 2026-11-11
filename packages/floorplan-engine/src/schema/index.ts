@@ -9,5 +9,16 @@ export {
   wallSchema,
 } from './plan.js'
 export type { Corner, Item, Opening, OpeningKind, Plan, Wall } from './plan.js'
-export { itemDefinitionSchema, placementTypeSchema } from './item-definition.js'
-export type { ItemDefinition, ItemSize, PlacementType } from './item-definition.js'
+export {
+  footprintPieceProblem,
+  footprintSchema,
+  itemDefinitionSchema,
+  placementTypeSchema,
+} from './item-definition.js'
+export type {
+  Footprint,
+  ItemDefinition,
+  ItemShape,
+  ItemSize,
+  PlacementType,
+} from './item-definition.js'

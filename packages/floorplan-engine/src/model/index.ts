@@ -16,9 +16,12 @@ export {
   convexPolygonsOverlap,
   findOverlaps,
   itemAt,
+  RECTANGLE_FOOTPRINT,
   itemAxes,
+  itemFootprint,
   itemOutline,
   normalizeAngle,
+  piecesOverlap,
   wallRectangle,
 } from './item-geometry.js'
 export type { ItemPose } from './item-geometry.js'

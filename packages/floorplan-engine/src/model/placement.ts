@@ -1,11 +1,11 @@
-import type { ItemSize } from '../schema/item-definition.js'
+import type { ItemShape, ItemSize } from '../schema/item-definition.js'
 import type { Floorplan } from './floorplan.js'
 import { EPSILON, type Point } from './geometry.js'
 import {
-  convexPolygonsOverlap,
   itemAxes,
-  itemOutline,
+  itemFootprint,
   normalizeAngle,
+  piecesOverlap,
   wallRectangle,
   type ItemPose,
 } from './item-geometry.js'
@@ -114,13 +114,13 @@ const SEARCH_DIRECTIONS = 12
  */
 export function findFreeSpot(
   request: ItemPose,
-  size: Pick<ItemSize, 'width' | 'depth'>,
+  shape: Pick<ItemShape, 'width' | 'depth' | 'footprint'>,
   floorplan: Pick<Floorplan, 'walls' | 'getCorner' | 'items'>,
-  sizeOf: (catalogKey: string) => Pick<ItemSize, 'width' | 'depth'>,
+  shapeOf: (catalogKey: string) => Pick<ItemShape, 'width' | 'depth' | 'footprint'>,
   settings: PlacementSettings = defaultPlacementSettings,
 ): PlacementResult {
-  const obstacles: Point[][] = floorplan.items.map((item) =>
-    itemOutline(item, sizeOf(item.catalogKey)),
+  const obstacles: Point[][] = floorplan.items.flatMap((item) =>
+    itemFootprint(item, shapeOf(item.catalogKey)),
   )
   for (const wall of floorplan.walls) {
     const start = floorplan.getCorner(wall.start)
@@ -128,9 +128,8 @@ export function findFreeSpot(
     if (start && end) obstacles.push(wallRectangle(start, end, wall.thickness))
   }
   const tryAt = (position: Point): PlacementResult | null => {
-    const placed = placeItem({ position, rotation: request.rotation }, size, floorplan, settings)
-    const outline = itemOutline(placed, size)
-    return obstacles.some((obstacle) => convexPolygonsOverlap(outline, obstacle)) ? null : placed
+    const placed = placeItem({ position, rotation: request.rotation }, shape, floorplan, settings)
+    return piecesOverlap(itemFootprint(placed, shape), obstacles) ? null : placed
   }
 
   const first = tryAt(request.position)
@@ -145,7 +144,7 @@ export function findFreeSpot(
       if (found) return found
     }
   }
-  return placeItem(request, size, floorplan, settings)
+  return placeItem(request, shape, floorplan, settings)
 }
 
 /** Both faces of every wall. */

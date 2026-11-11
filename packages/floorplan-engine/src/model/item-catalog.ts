@@ -2,6 +2,7 @@ import { Emitter, type Listener } from '../core/events.js'
 import {
   itemDefinitionSchema,
   type ItemDefinition,
+  type ItemShape,
   type ItemSize,
 } from '../schema/item-definition.js'
 
@@ -15,12 +16,16 @@ export type ItemCatalogEvents = {
 /** The item definitions the app passed in, looked up by key. */
 export class ItemCatalog {
   private definitions = new Map<string, ItemDefinition>()
+  private shapes = new Map<string, ItemShape>()
   private readonly emitter = new Emitter<ItemCatalogEvents>()
 
   /** Replaces the definitions. Throws a `ZodError` if one is not valid. */
   set(definitions: readonly ItemDefinition[]): void {
     const parsed = definitions.map((definition) => itemDefinitionSchema.parse(definition))
     this.definitions = new Map(parsed.map((definition) => [definition.key, definition]))
+    this.shapes = new Map(
+      parsed.map(({ key, size, footprint }) => [key, footprint ? { ...size, footprint } : size]),
+    )
     this.emitter.emit('change', undefined)
   }
 
@@ -34,6 +39,12 @@ export class ItemCatalog {
 
   /** An item's size, or `FALLBACK_ITEM_SIZE` when its key is unknown. */
   readonly sizeOf = (key: string): ItemSize => this.definitions.get(key)?.size ?? FALLBACK_ITEM_SIZE
+
+  /**
+   * An item's size with its outline on the floor, for overlap checks, hit-testing and drawing.
+   * An unknown key gets `FALLBACK_ITEM_SIZE`, which is a plain rectangle.
+   */
+  readonly shapeOf = (key: string): ItemShape => this.shapes.get(key) ?? FALLBACK_ITEM_SIZE
 
   on<Name extends keyof ItemCatalogEvents>(
     name: Name,
