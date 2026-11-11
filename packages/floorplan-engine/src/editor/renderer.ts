@@ -1,0 +1,281 @@
+import type { Floorplan } from '../model/floorplan.js'
+import { distance, type Point } from '../model/geometry.js'
+import type { Hit } from './hit-testing.js'
+import type { DrawPreview, Selection } from './interaction.js'
+import type { Viewport } from './viewport.js'
+
+export interface EditorTheme {
+  background: string
+  gridMinor: string
+  gridMajor: string
+  axis: string
+  roomFill: string
+  roomLabel: string
+  wall: string
+  wallHover: string
+  wallSelected: string
+  corner: string
+  cornerStroke: string
+  cornerHover: string
+  cornerSelected: string
+  dimension: string
+  preview: string
+  snap: string
+  font: string
+}
+
+export const defaultTheme: EditorTheme = {
+  background: '#fafafa',
+  gridMinor: '#f0f0f1',
+  gridMajor: '#dcdcdf',
+  axis: '#b4b4b9',
+  roomFill: 'rgba(59, 130, 246, 0.08)',
+  roomLabel: '#52525b',
+  wall: '#3f3f46',
+  wallHover: '#2563eb',
+  wallSelected: '#1d4ed8',
+  corner: '#ffffff',
+  cornerStroke: '#3f3f46',
+  cornerHover: '#2563eb',
+  cornerSelected: '#1d4ed8',
+  dimension: '#71717a',
+  preview: '#2563eb',
+  snap: '#f59e0b',
+  font: '12px system-ui, sans-serif',
+}
+
+export interface RenderState {
+  floorplan: Floorplan
+  viewport: Viewport
+  hover: Hit
+  selection: Selection
+  preview: DrawPreview | null
+  theme: EditorTheme
+}
+
+/** Scale above which the 0.1 m grid lines are drawn. */
+const MINOR_GRID_MIN_SCALE = 60
+const MIN_WALL_PIXELS = 2
+const CORNER_RADIUS = 4
+const CORNER_RADIUS_ACTIVE = 6
+const DIMENSION_OFFSET = 14
+
+export function formatLength(metres: number): string {
+  return `${metres.toFixed(2)} m`
+}
+
+export function formatArea(squareMetres: number): string {
+  return `${squareMetres.toFixed(1)} m²`
+}
+
+/** Draws the whole plan. `ctx` must already be scaled for the device pixel ratio. */
+export function render(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const { viewport, theme } = state
+  ctx.fillStyle = theme.background
+  ctx.fillRect(0, 0, viewport.width, viewport.height)
+  ctx.font = theme.font
+
+  drawGrid(ctx, state)
+  drawRooms(ctx, state)
+  drawWalls(ctx, state)
+  drawDimensions(ctx, state)
+  drawCorners(ctx, state)
+  drawPreview(ctx, state)
+}
+
+function drawGrid(ctx: CanvasRenderingContext2D, { viewport, theme }: RenderState): void {
+  const { min, max } = viewport.visibleBounds()
+  const step = viewport.scale >= MINOR_GRID_MIN_SCALE ? 0.1 : 1
+  ctx.lineWidth = 1
+  for (let x = Math.floor(min.x / step) * step; x <= max.x; x += step) {
+    const major = Math.abs(x - Math.round(x)) < 1e-6
+    if (!major && step === 1) continue
+    const sx = Math.round(viewport.toScreen({ x, y: 0 }).x) + 0.5
+    ctx.strokeStyle = x === 0 ? theme.axis : major ? theme.gridMajor : theme.gridMinor
+    ctx.beginPath()
+    ctx.moveTo(sx, 0)
+    ctx.lineTo(sx, viewport.height)
+    ctx.stroke()
+  }
+  for (let y = Math.floor(min.y / step) * step; y <= max.y; y += step) {
+    const major = Math.abs(y - Math.round(y)) < 1e-6
+    if (!major && step === 1) continue
+    const sy = Math.round(viewport.toScreen({ x: 0, y }).y) + 0.5
+    ctx.strokeStyle = y === 0 ? theme.axis : major ? theme.gridMajor : theme.gridMinor
+    ctx.beginPath()
+    ctx.moveTo(0, sy)
+    ctx.lineTo(viewport.width, sy)
+    ctx.stroke()
+  }
+}
+
+function drawRooms(
+  ctx: CanvasRenderingContext2D,
+  { floorplan, viewport, theme }: RenderState,
+): void {
+  for (const room of floorplan.rooms) {
+    const outline = room.interior.length >= 3 ? room.interior : room.polygon
+    ctx.fillStyle = theme.roomFill
+    tracePolygon(
+      ctx,
+      outline.map((p) => viewport.toScreen(p)),
+    )
+    ctx.fill()
+
+    const label = viewport.toScreen(room.centroid)
+    ctx.fillStyle = theme.roomLabel
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(formatArea(room.area), label.x, label.y)
+  }
+}
+
+function drawWalls(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const { floorplan, viewport, theme, hover, selection } = state
+  for (const wall of floorplan.walls) {
+    const start = floorplan.getCorner(wall.start)!
+    const end = floorplan.getCorner(wall.end)!
+    const selected = selection?.kind === 'wall' && selection.id === wall.id
+    const hovered = hover?.kind === 'wall' && hover.id === wall.id
+    ctx.fillStyle = selected ? theme.wallSelected : hovered ? theme.wallHover : theme.wall
+    tracePolygon(ctx, wallBand(start, end, wall.thickness, viewport))
+    ctx.fill()
+  }
+}
+
+/** The four screen corners of a wall drawn at its real thickness, at least `MIN_WALL_PIXELS` wide. */
+function wallBand(start: Point, end: Point, thickness: number, viewport: Viewport): Point[] {
+  const a = viewport.toScreen(start)
+  const b = viewport.toScreen(end)
+  const length = distance(a, b)
+  if (length === 0) return []
+  const half = Math.max(thickness * viewport.scale, MIN_WALL_PIXELS) / 2
+  const nx = (-(b.y - a.y) / length) * half
+  const ny = ((b.x - a.x) / length) * half
+  return [
+    { x: a.x + nx, y: a.y + ny },
+    { x: b.x + nx, y: b.y + ny },
+    { x: b.x - nx, y: b.y - ny },
+    { x: a.x - nx, y: a.y - ny },
+  ]
+}
+
+function drawDimensions(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const { floorplan, viewport, theme } = state
+  ctx.fillStyle = theme.dimension
+  for (const wall of floorplan.walls) {
+    const start = floorplan.getCorner(wall.start)!
+    const end = floorplan.getCorner(wall.end)!
+    // Label the side without a room, or the back when both or neither have one.
+    const sides = floorplan.roomsOf(wall.id)
+    const side = sides.front && !sides.back ? -1 : 1
+    drawLabel(ctx, viewport, start, end, formatLength(distance(start, end)), side, wall.thickness)
+  }
+}
+
+/**
+ * Writes `text` along the segment, offset to one side (`side` 1 is the left of start→end in world
+ * terms, which is the room's inside for a counter-clockwise room), kept upright.
+ */
+function drawLabel(
+  ctx: CanvasRenderingContext2D,
+  viewport: Viewport,
+  start: Point,
+  end: Point,
+  text: string,
+  side: 1 | -1,
+  thickness: number,
+): void {
+  const a = viewport.toScreen(start)
+  const b = viewport.toScreen(end)
+  const length = distance(a, b)
+  if (length < 30) return
+  let angle = Math.atan2(b.y - a.y, b.x - a.x)
+  // Screen y points down, so the world left side is the screen right-hand normal.
+  const offset = thickness * viewport.scale * 0.5 + DIMENSION_OFFSET
+  const nx = ((b.y - a.y) / length) * offset * side
+  const ny = (-(b.x - a.x) / length) * offset * side
+  const mid = { x: (a.x + b.x) / 2 + nx, y: (a.y + b.y) / 2 + ny }
+  if (angle > Math.PI / 2 || angle <= -Math.PI / 2) angle += Math.PI
+  ctx.save()
+  ctx.translate(mid.x, mid.y)
+  ctx.rotate(angle)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, 0, 0)
+  ctx.restore()
+}
+
+function drawCorners(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const { floorplan, viewport, theme, hover, selection } = state
+  ctx.lineWidth = 1.5
+  for (const corner of floorplan.corners) {
+    const selected = selection?.kind === 'corner' && selection.id === corner.id
+    const hovered = hover?.kind === 'corner' && hover.id === corner.id
+    const p = viewport.toScreen(corner)
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, selected || hovered ? CORNER_RADIUS_ACTIVE : CORNER_RADIUS, 0, Math.PI * 2)
+    ctx.fillStyle = selected ? theme.cornerSelected : hovered ? theme.cornerHover : theme.corner
+    ctx.fill()
+    ctx.strokeStyle = selected
+      ? theme.cornerSelected
+      : hovered
+        ? theme.cornerHover
+        : theme.cornerStroke
+    ctx.stroke()
+  }
+}
+
+function drawPreview(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const { preview, viewport, theme } = state
+  if (!preview) return
+  const cursor = viewport.toScreen(preview.cursor)
+
+  if (preview.anchor) {
+    const anchor = viewport.toScreen(preview.anchor)
+    ctx.save()
+    ctx.strokeStyle = theme.preview
+    ctx.lineWidth = 2
+    ctx.setLineDash([6, 4])
+    ctx.beginPath()
+    ctx.moveTo(anchor.x, anchor.y)
+    ctx.lineTo(cursor.x, cursor.y)
+    ctx.stroke()
+    ctx.restore()
+    ctx.fillStyle = theme.preview
+    drawLabel(
+      ctx,
+      viewport,
+      preview.anchor,
+      preview.cursor,
+      formatLength(distance(preview.anchor, preview.cursor)),
+      -1,
+      0,
+    )
+  }
+
+  ctx.strokeStyle = theme.snap
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  switch (preview.target.kind) {
+    case 'corner':
+      ctx.arc(cursor.x, cursor.y, CORNER_RADIUS_ACTIVE + 2, 0, Math.PI * 2)
+      break
+    case 'wall':
+    case 'axis':
+      ctx.rect(cursor.x - 5, cursor.y - 5, 10, 10)
+      break
+    default:
+      ctx.moveTo(cursor.x - 6, cursor.y)
+      ctx.lineTo(cursor.x + 6, cursor.y)
+      ctx.moveTo(cursor.x, cursor.y - 6)
+      ctx.lineTo(cursor.x, cursor.y + 6)
+  }
+  ctx.stroke()
+}
+
+function tracePolygon(ctx: CanvasRenderingContext2D, points: Point[]): void {
+  ctx.beginPath()
+  points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
+  ctx.closePath()
+}

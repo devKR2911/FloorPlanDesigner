@@ -1,0 +1,368 @@
+import { Emitter, type Listener } from '../core/events.js'
+import { Floorplan, FloorplanError } from '../model/floorplan.js'
+import { distance, type Point } from '../model/geometry.js'
+import { hitTest, type Hit } from './hit-testing.js'
+import { snapPoint, toGrid, type SnapSettings, type SnapTarget } from './snapping.js'
+import type { Viewport } from './viewport.js'
+
+export type EditorMode = 'move' | 'draw' | 'delete'
+
+export type Selection = { kind: 'corner' | 'wall'; id: string } | null
+
+/** A pointer event in both coordinate systems, as the canvas layer reports it. */
+export interface PointerInput {
+  screen: Point
+  world: Point
+  /** 0 main, 1 auxiliary (wheel), 2 secondary. */
+  button?: number
+  /** Snapping is off while `Alt` is held. */
+  altKey?: boolean
+}
+
+/** What the renderer shows while drawing: the rubber-band wall and the snap indicator. */
+export interface DrawPreview {
+  /** The previous corner in the chain, if any. */
+  anchor: Point | null
+  /** The snapped pointer position. */
+  cursor: Point
+  target: SnapTarget
+}
+
+export type InteractionEvents = {
+  mode: EditorMode
+  selection: Selection
+  hover: Hit
+  /** The viewport was panned or zoomed. */
+  viewport: Viewport
+  /** Something visual changed that the model does not report: hover, preview, cursor. */
+  invalidate: undefined
+}
+
+/** How far, in pixels, the pointer may travel for a press to still count as a click. */
+const CLICK_SLOP = 3
+
+type Gesture =
+  | { type: 'idle' }
+  | { type: 'pending'; start: PointerInput; hit: Hit }
+  | { type: 'pan'; last: Point }
+  | { type: 'dragCorner'; id: string }
+  | {
+      type: 'dragWall'
+      id: string
+      cornerIds: [string, string]
+      grabWorld: Point
+      grabCorner: Point
+    }
+
+/**
+ * The editor's input logic: modes, selection, drawing and dragging. It takes pointer input in
+ * world coordinates and calls the model, with no DOM involved, so it is tested in Node.
+ */
+export class Interaction {
+  readonly floorplan: Floorplan
+  readonly viewport: Viewport
+  readonly snapping: SnapSettings
+
+  private currentMode: EditorMode = 'move'
+  private currentSelection: Selection = null
+  private currentHover: Hit = null
+  private gesture: Gesture = { type: 'idle' }
+  private chain: { start: string; last: string; walls: number } | null = null
+  private pointer: PointerInput | null = null
+  private readonly emitter = new Emitter<InteractionEvents>()
+
+  constructor(floorplan: Floorplan, viewport: Viewport, snapping: SnapSettings) {
+    this.floorplan = floorplan
+    this.viewport = viewport
+    this.snapping = snapping
+  }
+
+  get mode(): EditorMode {
+    return this.currentMode
+  }
+
+  set mode(mode: EditorMode) {
+    if (mode === this.currentMode) return
+    this.endChain()
+    this.gesture = { type: 'idle' }
+    this.currentMode = mode
+    this.select(null)
+    this.emitter.emit('mode', mode)
+    this.invalidate()
+  }
+
+  get selection(): Selection {
+    return this.currentSelection
+  }
+
+  get hover(): Hit {
+    return this.currentHover
+  }
+
+  /** True while a chain of walls is being drawn. */
+  get drawing(): boolean {
+    return this.chain !== null
+  }
+
+  /** The rubber-band wall and snap indicator, or `null` when there is nothing to preview. */
+  get preview(): DrawPreview | null {
+    if (this.currentMode !== 'draw' || !this.pointer) return null
+    const { point, target } = this.snapDrawPoint(this.pointer)
+    const last = this.chain ? this.floorplan.getCorner(this.chain.last) : undefined
+    return { anchor: last ? { x: last.x, y: last.y } : null, cursor: point, target }
+  }
+
+  on<Name extends keyof InteractionEvents>(
+    name: Name,
+    listener: Listener<InteractionEvents[Name]>,
+  ): () => void {
+    return this.emitter.on(name, listener)
+  }
+
+  pointerDown(input: PointerInput): void {
+    this.pointer = input
+    if (input.button === 1) {
+      this.gesture = { type: 'pan', last: input.screen }
+      return
+    }
+    if (input.button !== undefined && input.button !== 0) return
+    const hit = this.currentMode === 'draw' ? null : this.hitAt(input.world)
+    this.gesture = { type: 'pending', start: input, hit }
+  }
+
+  pointerMove(input: PointerInput): void {
+    this.pointer = input
+    const gesture = this.gesture
+
+    if (gesture.type === 'pending') {
+      if (distance(gesture.start.screen, input.screen) < CLICK_SLOP) return
+      this.beginDrag(gesture)
+      this.pointerMove(input)
+      return
+    }
+
+    if (gesture.type === 'pan') {
+      this.viewport.panBy(input.screen.x - gesture.last.x, input.screen.y - gesture.last.y)
+      gesture.last = input.screen
+      this.emitter.emit('viewport', this.viewport)
+      return
+    }
+
+    if (gesture.type === 'dragCorner') {
+      const { point } = snapPoint(input.world, this.floorplan, {
+        settings: this.settingsFor(input),
+        metresPerPixel: this.viewport.metresPerPixel,
+        exclude: new Set([gesture.id]),
+      })
+      this.floorplan.moveCorner(gesture.id, point.x, point.y, { resolve: false })
+      return
+    }
+
+    if (gesture.type === 'dragWall') {
+      // Carry the grabbed corner's start position by the pointer offset, then grid it.
+      const grid = this.settingsFor(input).enabled ? this.snapping.grid : 0
+      const targetX = toGrid(gesture.grabCorner.x + (input.world.x - gesture.grabWorld.x), grid)
+      const targetY = toGrid(gesture.grabCorner.y + (input.world.y - gesture.grabWorld.y), grid)
+      const current = this.floorplan.getCorner(gesture.cornerIds[0])
+      if (!current) return
+      const dx = targetX - current.x
+      const dy = targetY - current.y
+      if (dx !== 0 || dy !== 0) {
+        this.floorplan.moveCorners(gesture.cornerIds, dx, dy, { resolve: false })
+      }
+      return
+    }
+
+    this.updateHover(input)
+    if (this.currentMode === 'draw') this.invalidate()
+  }
+
+  pointerUp(input: PointerInput): void {
+    this.pointer = input
+    const gesture = this.gesture
+    this.gesture = { type: 'idle' }
+
+    if (gesture.type === 'pending') {
+      this.click(input, gesture.hit)
+    } else if (gesture.type === 'dragCorner') {
+      const survivor = this.floorplan.resolveCorner(gesture.id)
+      this.select({ kind: 'corner', id: survivor })
+    } else if (gesture.type === 'dragWall') {
+      for (const id of gesture.cornerIds) {
+        if (this.floorplan.getCorner(id)) this.floorplan.resolveCorner(id)
+      }
+      this.select(this.floorplan.getWall(gesture.id) ? { kind: 'wall', id: gesture.id } : null)
+    }
+    this.updateHover(input)
+    this.invalidate()
+  }
+
+  /** The pointer left the canvas, or the gesture was cancelled by the browser. */
+  pointerCancel(): void {
+    const gesture = this.gesture
+    this.gesture = { type: 'idle' }
+    this.pointer = null
+    if (gesture.type === 'dragCorner') this.floorplan.resolveCorner(gesture.id)
+    if (gesture.type === 'dragWall') {
+      for (const id of gesture.cornerIds) {
+        if (this.floorplan.getCorner(id)) this.floorplan.resolveCorner(id)
+      }
+    }
+    this.setHover(null)
+    this.invalidate()
+  }
+
+  doubleClick(): void {
+    if (this.chain) this.endChain()
+  }
+
+  /** `deltaY` as the wheel event reports it: positive scrolls down and zooms out. */
+  wheel(screen: Point, deltaY: number): void {
+    this.viewport.zoomAt(screen, Math.pow(1.0015, -deltaY))
+    this.emitter.emit('viewport', this.viewport)
+    if (this.pointer) this.updateHover({ ...this.pointer, world: this.viewport.toWorld(screen) })
+  }
+
+  /** Keyboard input by `KeyboardEvent.key`. Returns whether the key was used. */
+  key(key: string): boolean {
+    switch (key) {
+      case 'Escape':
+        if (this.chain) this.endChain()
+        else if (this.currentMode !== 'move') this.mode = 'move'
+        else if (this.currentSelection) this.select(null)
+        else return false
+        this.invalidate()
+        return true
+      case 'Delete':
+      case 'Backspace':
+        return this.deleteSelection()
+      default:
+        return false
+    }
+  }
+
+  /** Ends the chain being drawn, if any. */
+  endChain(): void {
+    if (!this.chain) return
+    this.chain = null
+    this.invalidate()
+  }
+
+  deleteSelection(): boolean {
+    const selection = this.currentSelection
+    if (!selection) return false
+    this.select(null)
+    if (selection.kind === 'corner') this.floorplan.removeCorner(selection.id)
+    else this.floorplan.removeWall(selection.id)
+    return true
+  }
+
+  private click(input: PointerInput, hit: Hit): void {
+    switch (this.currentMode) {
+      case 'move':
+        this.select(hit)
+        break
+      case 'draw':
+        this.placeCorner(input)
+        break
+      case 'delete':
+        if (hit?.kind === 'corner') this.floorplan.removeCorner(hit.id)
+        else if (hit?.kind === 'wall') this.floorplan.removeWall(hit.id)
+        this.setHover(null)
+        break
+    }
+  }
+
+  private placeCorner(input: PointerInput): void {
+    const { point } = this.snapDrawPoint(input)
+    const id = this.floorplan.addCorner(point.x, point.y)
+    if (!this.chain) {
+      this.chain = { start: id, last: id, walls: 0 }
+      return
+    }
+    if (id === this.chain.last) {
+      // Clicking the last corner again ends the chain, which is also what a double click does.
+      this.endChain()
+      return
+    }
+    try {
+      this.floorplan.addWall(this.chain.last, id)
+      this.chain.walls++
+    } catch (error) {
+      // Drawing over an existing wall is allowed; the chain just moves on.
+      if (!(error instanceof FloorplanError)) throw error
+    }
+    if (id === this.chain.start) this.endChain()
+    else this.chain.last = id
+  }
+
+  private beginDrag(pending: Extract<Gesture, { type: 'pending' }>): void {
+    const { hit, start } = pending
+    if (this.currentMode === 'move' && hit?.kind === 'corner') {
+      this.gesture = { type: 'dragCorner', id: hit.id }
+      this.select(hit)
+      return
+    }
+    if (this.currentMode === 'move' && hit?.kind === 'wall') {
+      const wall = this.floorplan.getWall(hit.id)!
+      const grabCorner = this.floorplan.getCorner(wall.start)!
+      this.gesture = {
+        type: 'dragWall',
+        id: hit.id,
+        cornerIds: [wall.start, wall.end],
+        grabWorld: start.world,
+        grabCorner: { x: grabCorner.x, y: grabCorner.y },
+      }
+      this.select(hit)
+      return
+    }
+    this.gesture = { type: 'pan', last: start.screen }
+  }
+
+  private snapDrawPoint(input: PointerInput): { point: Point; target: SnapTarget } {
+    return snapPoint(input.world, this.floorplan, {
+      settings: this.settingsFor(input),
+      metresPerPixel: this.viewport.metresPerPixel,
+      anchorId: this.chain?.last ?? null,
+    })
+  }
+
+  private settingsFor(input: PointerInput): SnapSettings {
+    return input.altKey ? { ...this.snapping, enabled: false } : this.snapping
+  }
+
+  private hitAt(world: Point): Hit {
+    return hitTest(
+      world,
+      this.floorplan,
+      this.snapping.cornerTolerance * this.viewport.metresPerPixel,
+    )
+  }
+
+  private updateHover(input: PointerInput): void {
+    this.setHover(this.currentMode === 'draw' ? null : this.hitAt(input.world))
+  }
+
+  private setHover(hit: Hit): void {
+    if (sameHit(hit, this.currentHover)) return
+    this.currentHover = hit
+    this.emitter.emit('hover', hit)
+    this.invalidate()
+  }
+
+  private select(selection: Selection): void {
+    if (sameHit(selection, this.currentSelection)) return
+    this.currentSelection = selection
+    this.emitter.emit('selection', selection)
+    this.invalidate()
+  }
+
+  private invalidate(): void {
+    this.emitter.emit('invalidate', undefined)
+  }
+}
+
+function sameHit(a: Hit | Selection, b: Hit | Selection): boolean {
+  if (a === null || b === null) return a === b
+  return a.kind === b.kind && a.id === b.id
+}
