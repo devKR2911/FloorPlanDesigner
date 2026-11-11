@@ -9,6 +9,7 @@ export default defineConfig({
       entry: {
         index: 'src/index.ts',
         schema: 'src/schema/index.ts',
+        model: 'src/model/index.ts',
       },
       formats: ['es'],
     },

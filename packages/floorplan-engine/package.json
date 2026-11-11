@@ -16,6 +16,10 @@
     "./schema": {
       "types": "./dist/schema/index.d.ts",
       "default": "./dist/schema.js"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "default": "./dist/model.js"
     }
   },
   "scripts": {
@@ -31,6 +35,7 @@
     "three": ">=0.170.0"
   },
   "devDependencies": {
+    "@types/node": "catalog:",
     "@types/three": "catalog:",
     "concurrently": "^10.0.7",
     "three": "catalog:",

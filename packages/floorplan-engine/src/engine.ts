@@ -9,11 +9,14 @@ import {
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Emitter, type Listener } from './core/events.js'
-import { createEmptyPlan, planSchema, type Plan } from './schema/plan.js'
+import { Floorplan, type FloorplanOptions } from './model/floorplan.js'
+import type { Plan } from './schema/plan.js'
 
 export interface FloorplanEngineOptions {
   /** Element that hosts the 3D view. The engine adds a canvas to it and follows its size. */
   view3d: HTMLElement
+  /** Tolerances and wall defaults for the floor-plan model. */
+  floorplan?: FloorplanOptions
 }
 
 export type FloorplanEngineEvents = {
@@ -25,6 +28,9 @@ export type FloorplanEngineEvents = {
 const GRID_SIZE = 20
 
 export class FloorplanEngine {
+  /** The plan being edited: corners, walls and the rooms detected from them. */
+  readonly floorplan: Floorplan
+
   private readonly container: HTMLElement
   private readonly renderer: WebGLRenderer
   private readonly scene = new Scene()
@@ -33,11 +39,13 @@ export class FloorplanEngine {
   private readonly grid: GridHelper
   private readonly resizeObserver: ResizeObserver
   private readonly emitter = new Emitter<FloorplanEngineEvents>()
-  private plan: Plan = createEmptyPlan()
+  private readonly stopWatchingFloorplan: () => void
   private disposed = false
 
   constructor(options: FloorplanEngineOptions) {
     this.container = options.view3d
+    this.floorplan = new Floorplan(options.floorplan)
+    this.stopWatchingFloorplan = this.floorplan.on('change', this.render)
 
     this.renderer = new WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -77,15 +85,15 @@ export class FloorplanEngine {
    */
   load(input: unknown): Plan {
     this.assertActive()
-    this.plan = planSchema.parse(input)
-    this.emitter.emit('load', this.export())
-    this.render()
-    return this.export()
+    this.floorplan.load(input)
+    const plan = this.export()
+    this.emitter.emit('load', plan)
+    return plan
   }
 
   /** Returns a copy of the current plan, ready to be saved as JSON. */
   export(): Plan {
-    return structuredClone(this.plan)
+    return this.floorplan.export()
   }
 
   /** Subscribes to an engine event and returns a function that unsubscribes. */
@@ -100,6 +108,7 @@ export class FloorplanEngine {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.stopWatchingFloorplan()
     this.resizeObserver.disconnect()
     this.controls.removeEventListener('change', this.render)
     this.controls.dispose()
