@@ -9,14 +9,19 @@ import {
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Emitter, type Listener } from './core/events.js'
+import { PlanEditor, type PlanEditorOptions } from './editor/plan-editor.js'
 import { Floorplan, type FloorplanOptions } from './model/floorplan.js'
 import type { Plan } from './schema/plan.js'
 
 export interface FloorplanEngineOptions {
   /** Element that hosts the 3D view. The engine adds a canvas to it and follows its size. */
   view3d: HTMLElement
+  /** Element that hosts the 2D plan editor. Without it, `engine.editor` is `null`. */
+  view2d?: HTMLElement
   /** Tolerances and wall defaults for the floor-plan model. */
   floorplan?: FloorplanOptions
+  /** Snapping and colours for the 2D editor. */
+  editor?: Pick<PlanEditorOptions, 'snapping' | 'theme'>
 }
 
 export type FloorplanEngineEvents = {
@@ -30,6 +35,8 @@ const GRID_SIZE = 20
 export class FloorplanEngine {
   /** The plan being edited: corners, walls and the rooms detected from them. */
   readonly floorplan: Floorplan
+  /** The 2D plan editor, when a `view2d` element was given. Shares `floorplan` with the 3D view. */
+  readonly editor: PlanEditor | null
 
   private readonly container: HTMLElement
   private readonly renderer: WebGLRenderer
@@ -46,6 +53,9 @@ export class FloorplanEngine {
     this.container = options.view3d
     this.floorplan = new Floorplan(options.floorplan)
     this.stopWatchingFloorplan = this.floorplan.on('change', this.render)
+    this.editor = options.view2d
+      ? new PlanEditor({ host: options.view2d, floorplan: this.floorplan, ...options.editor })
+      : null
 
     this.renderer = new WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -108,6 +118,7 @@ export class FloorplanEngine {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.editor?.dispose()
     this.stopWatchingFloorplan()
     this.resizeObserver.disconnect()
     this.controls.removeEventListener('change', this.render)
