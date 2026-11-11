@@ -1,0 +1,18 @@
+packages:
+  - packages/*
+  - apps/*
+
+# Dependencies that are allowed to run install scripts.
+allowBuilds:
+  esbuild: true
+
+# Versions shared by more than one package. Reference them with "catalog:".
+catalog:
+  '@types/node': ^26.6.6
+  '@types/three': ^0.187.0
+  hono: ^4.13.17
+  three: ^0.187.0
+  typescript: ^6.0.3
+  vite: ^8.3.7
+  vitest: ^5.1.0
+  zod: ^4.6.7
