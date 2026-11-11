@@ -15,7 +15,7 @@ Each phase has its own file. A phase starts only after its own go-ahead.
 | 4     | [Catalogue and furniture](phase-4-catalogue-and-furniture.md)    | Done        |
 | 5     | [Doors and windows](phase-5-doors-and-windows.md)                | Done        |
 | 6     | [Plan list, save and load screens](phase-6-plan-screens.md)      | Done        |
-| 7     | [Undo and redo, polish, wider tests](phase-7-undo-and-polish.md) | Not started |
+| 7     | [Undo and redo, polish, wider tests](phase-7-undo-and-polish.md) | Done        |
 | 8     | [Login](phase-8-login.md)                                        | Not started |
 
 ## Working preferences
@@ -43,16 +43,16 @@ These were agreed in the planning discussion on 2026-11-10. Treat them as settle
 
 ### Tech stack
 
-| Part            | Choice                                                                                                                |
-| --------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Engine library  | TypeScript (strict), Three.js, Canvas 2D for the plan editor, GLB models with the Draco decoder hosted in the project |
-| Web app         | Vite, React 19, Tailwind CSS 4, shadcn/ui, lucide-react, TanStack Query                                               |
-| Backend         | Node.js and TypeScript with Hono                                                                                      |
-| Database        | PostgreSQL, with each plan stored as a `jsonb` document plus normal columns                                           |
-| Database access | Drizzle ORM, with migrations                                                                                          |
-| Validation      | Zod schemas, shared by the web app and the backend                                                                    |
-| Shared package  | API request and response types, Zod schemas, shared logic                                                             |
-| Tooling         | pnpm workspaces, Vitest (focused on geometry), ESLint, Prettier, Docker Compose for local Postgres                    |
+| Part            | Choice                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Engine library  | TypeScript (strict), Three.js, Canvas 2D for the plan editor, GLB models, with the Draco decoder that comes with Three.js      |
+| Web app         | Vite, React 19, Tailwind CSS 4, shadcn/ui, lucide-react, TanStack Query                                                        |
+| Backend         | Node.js and TypeScript with Hono                                                                                               |
+| Database        | PostgreSQL, with each plan stored as a `jsonb` document plus normal columns                                                    |
+| Database access | Drizzle ORM, with migrations                                                                                                   |
+| Validation      | Zod schemas, shared by the web app and the backend                                                                             |
+| Shared package  | API request and response types, Zod schemas, shared logic                                                                      |
+| Tooling         | pnpm workspaces, Vitest, Testing Library, PGlite and Playwright for tests, ESLint, Prettier, Docker Compose for local Postgres |
 
 Choices made by request, replacing earlier suggestions:
 
@@ -89,7 +89,7 @@ The 3D code lives in a separate package with no React inside, so it can be publi
 Intended usage from the app:
 
 ```ts
-const engine = new FloorplanEngine({ view3d: el3d, view2d: el2d, dracoPath: '/draco/' })
+const engine = new FloorplanEngine({ view3d: el3d, view2d: el2d })
 engine.load(planJson)
 engine.addItem({ model: '/models/sofa.glb', placement: 'floor' })
 engine.on('change', () => save(engine.export()))
@@ -118,6 +118,8 @@ pnpm dev           # web on http://localhost:5173, backend on http://localhost:3
 ```
 
 Other scripts: `pnpm typecheck`, `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm format`, `pnpm db:down`.
+
+`pnpm e2e` runs the whole app in the installed Chrome. It needs Postgres running (`pnpm db:up`) and uses its own database, `floorplandesigner_e2e`, and its own ports, so it can run beside `pnpm dev` and never touches the plans in the working database.
 
 The repository is on GitHub at `devKR2911/FloorPlanDesigner`.
 
