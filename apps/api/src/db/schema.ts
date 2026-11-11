@@ -1,6 +1,13 @@
 import type { Plan } from '@floorplandesigner/engine/schema'
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import {
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  type PgDatabase,
+  type PgQueryResultHKT,
+} from 'drizzle-orm/pg-core'
 
 // There is no owner column yet. Login adds it later with one migration.
 export const plans = pgTable('plans', {
@@ -15,4 +22,8 @@ export const plans = pgTable('plans', {
 
 export const schema = { plans }
 
-export type Database = NodePgDatabase<typeof schema>
+/**
+ * Any Postgres database Drizzle can talk to: the `pg` driver when the backend runs, and an
+ * in-process Postgres in the tests.
+ */
+export type Database = PgDatabase<PgQueryResultHKT, typeof schema>
