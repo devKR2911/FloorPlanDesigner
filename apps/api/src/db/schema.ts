@@ -14,7 +14,7 @@ export const plans = pgTable('plans', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   document: jsonb('document').$type<Plan>().notNull(),
-  /** A small picture of the plan for the plan list, as a PNG data URL. */
+  /** A small picture of the plan for the plan list, as a PNG or JPEG data URL. */
   thumbnail: text('thumbnail'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

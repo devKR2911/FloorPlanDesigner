@@ -8,11 +8,11 @@ const timestampSchema = z.iso.datetime()
 /** The longest thumbnail accepted, in characters. A data URL this long holds about 100 kB. */
 export const MAX_THUMBNAIL_LENGTH = 140_000
 
-/** A small picture of a plan for the plan list: a PNG as a base64 data URL. */
+/** A small picture of a plan for the plan list: a PNG or JPEG as a base64 data URL. */
 export const planThumbnailSchema = z
   .string()
   .max(MAX_THUMBNAIL_LENGTH)
-  .regex(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/, 'Must be a PNG data URL')
+  .regex(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/, 'Must be a PNG or JPEG data URL')
 
 /** A saved plan without its document, as returned by the plan list. */
 export const planSummarySchema = z.object({

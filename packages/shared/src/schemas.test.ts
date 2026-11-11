@@ -65,10 +65,12 @@ describe('plan thumbnails', () => {
     expect(createPlanRequestSchema.parse({ ...body, thumbnail: png }).thumbnail).toBe(png)
   })
 
-  it('must be PNG data URLs', () => {
+  it('must be PNG or JPEG data URLs', () => {
+    const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRg=='
+    expect(updatePlanRequestSchema.parse({ thumbnail: jpeg })).toEqual({ thumbnail: jpeg })
     for (const thumbnail of [
       'https://example.com/plan.png',
-      'data:image/jpeg;base64,AAAA',
+      'data:image/gif;base64,AAAA',
       'data:image/png;base64,not base64!',
       '',
     ]) {

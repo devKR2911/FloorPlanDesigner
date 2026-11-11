@@ -36,7 +36,7 @@ describe('request validation', () => {
     ])
   })
 
-  it('rejects a thumbnail that is not a PNG data URL', async () => {
+  it('rejects a thumbnail that is not an image data URL', async () => {
     const document = { version: 1, corners: [], walls: [], items: [] }
     const response = await postPlan(
       JSON.stringify({ name: 'Flat', document, thumbnail: 'https://example.com/plan.png' }),
