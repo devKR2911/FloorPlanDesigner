@@ -202,7 +202,7 @@ export class PlanEditor {
       selection: null,
       preview: null,
       theme: this.theme,
-      sizeOf: this.catalog.sizeOf,
+      shapeOf: this.catalog.shapeOf,
       overlaps: new Set(),
       rotateHandle: null,
       rotateHandleHover: false,
@@ -338,8 +338,8 @@ export class PlanEditor {
       preview: this.interaction.preview,
       theme: this.theme,
       deleteHover: this.interaction.mode === 'delete',
-      sizeOf: this.catalog.sizeOf,
-      overlaps: findOverlaps(this.floorplan, this.catalog.sizeOf),
+      shapeOf: this.catalog.shapeOf,
+      overlaps: findOverlaps(this.floorplan, this.catalog.shapeOf),
       rotateHandle: selectedItem
         ? rotateHandlePosition(
             selectedItem,

@@ -1,10 +1,10 @@
 import type { Floorplan } from '../model/floorplan.js'
 import { distance, type Point } from '../model/geometry.js'
-import { itemOutline } from '../model/item-geometry.js'
+import { RECTANGLE_FOOTPRINT, itemFootprint } from '../model/item-geometry.js'
 import { wallFootprints } from '../model/wall-footprints.js'
 import { openingOutline } from '../model/wall-openings.js'
 import type { Opening } from '../schema/plan.js'
-import type { ItemSize } from '../schema/item-definition.js'
+import type { ItemShape } from '../schema/item-definition.js'
 import type { Hit } from './hit-testing.js'
 import type { DrawPreview, Selection } from './interaction.js'
 import type { Viewport } from './viewport.js'
@@ -94,7 +94,8 @@ export interface RenderState {
   selection: Selection
   preview: DrawPreview | null
   theme: EditorTheme
-  sizeOf: (catalogKey: string) => ItemSize
+  /** Each item's size and outline on the floor. */
+  shapeOf: (catalogKey: string) => ItemShape
   /** Ids of the items that overlap a wall or another item. */
   overlaps: ReadonlySet<string>
   /** Where the selected item's rotate handle is, in world coordinates, if an item is selected. */
@@ -207,12 +208,16 @@ function drawRooms(
 }
 
 function drawItems(ctx: CanvasRenderingContext2D, state: RenderState): void {
-  const { floorplan, viewport, theme, hover, selection, overlaps, sizeOf } = state
+  const { floorplan, viewport, theme, hover, selection, overlaps, shapeOf } = state
   const hoverColour = hoverColours(state)
   for (const item of floorplan.items) {
     const selected = selection?.kind === 'item' && selection.id === item.id
     const hovered = hover?.kind === 'item' && hover.id === item.id
-    const outline = itemOutline(item, sizeOf(item.catalogKey)).map((p) => viewport.toScreen(p))
+    const shape = shapeOf(item.catalogKey)
+    const local = shape.footprint ?? RECTANGLE_FOOTPRINT
+    const pieces = itemFootprint(item, shape).map((piece) => piece.map((p) => viewport.toScreen(p)))
+
+    // All the pieces as one path, so where they overlap is not filled twice.
     ctx.fillStyle = overlaps.has(item.id)
       ? theme.itemOverlap
       : selected
@@ -220,19 +225,50 @@ function drawItems(ctx: CanvasRenderingContext2D, state: RenderState): void {
         : hovered
           ? hoverColour.item
           : theme.item
-    tracePolygon(ctx, outline)
-    ctx.fill()
-    ctx.strokeStyle = selected ? theme.wallSelected : hovered ? hoverColour.line : theme.itemStroke
-    ctx.lineWidth = selected ? 1.5 : 1
-    ctx.stroke()
-    // A heavier line along the front, so it is clear which way the item faces.
-    ctx.lineWidth = 3
     ctx.beginPath()
-    ctx.moveTo(outline[0]!.x, outline[0]!.y)
-    ctx.lineTo(outline[1]!.x, outline[1]!.y)
-    ctx.stroke()
+    for (const piece of pieces) addPolygon(ctx, piece)
+    ctx.fill('nonzero')
+
+    ctx.strokeStyle = selected ? theme.wallSelected : hovered ? hoverColour.line : theme.itemStroke
+    pieces.forEach((piece, index) => {
+      ctx.save()
+      // Only the outside of the whole shape is drawn: lines inside another piece are cut away.
+      if (pieces.length > 1) {
+        ctx.beginPath()
+        ctx.rect(0, 0, viewport.width, viewport.height)
+        pieces.forEach((other, otherIndex) => {
+          if (otherIndex !== index) addPolygon(ctx, other)
+        })
+        ctx.clip('evenodd')
+      }
+      ctx.lineWidth = selected ? 1.5 : 1
+      ctx.beginPath()
+      addPolygon(ctx, piece)
+      ctx.stroke()
+      // A heavier line along the front, so it is clear which way the item faces.
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      const points = local[index]!
+      points.forEach(([, y], i) => {
+        const next = (i + 1) % points.length
+        if (y > FRONT_EDGE || points[next]![1] > FRONT_EDGE) return
+        ctx.moveTo(piece[i]!.x, piece[i]!.y)
+        ctx.lineTo(piece[next]!.x, piece[next]!.y)
+      })
+      ctx.stroke()
+      ctx.restore()
+    })
   }
   drawRotateHandle(ctx, state)
+}
+
+/** Footprint points at or in front of this `y` are on the item's front edge. */
+const FRONT_EDGE = -0.5 + 1e-3
+
+/** Adds a closed polygon to the current path. */
+function addPolygon(ctx: CanvasRenderingContext2D, points: readonly Point[]): void {
+  points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
+  ctx.closePath()
 }
 
 function drawRotateHandle(ctx: CanvasRenderingContext2D, state: RenderState): void {

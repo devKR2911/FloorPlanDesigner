@@ -11,6 +11,7 @@ import {
   placeItem,
   type PlacementSettings,
 } from './model/placement.js'
+import { findOverlaps } from './model/item-geometry.js'
 import {
   defaultOpeningSnapSettings,
   projectOntoWall,
@@ -132,6 +133,14 @@ export class FloorplanEngine {
   }
 
   /**
+   * The ids of the items that overlap a wall or another item, judged by their outlines on the
+   * floor. These are the items both views show in red.
+   */
+  overlappingItems(): Set<string> {
+    return findOverlaps(this.floorplan, this.catalog.shapeOf)
+  }
+
+  /**
    * Adds an item from the catalogue and selects it. Without a position it goes to the free place
    * nearest the middle of whichever view is showing, and is snapped against a wall if one is
    * near. Returns its id.
@@ -141,7 +150,7 @@ export class FloorplanEngine {
     if (!this.catalog.get(catalogKey)) {
       throw new FloorplanError(`"${catalogKey}" is not in the catalogue`)
     }
-    const size = this.catalog.sizeOf(catalogKey)
+    const size = this.catalog.shapeOf(catalogKey)
     const rotation = options.rotation ?? 0
     // A place the caller chose is used as it is. Without one, the item goes to the free place
     // nearest the middle of the view, so that it does not land on top of something else.
@@ -151,7 +160,7 @@ export class FloorplanEngine {
           { position: this.viewCentre(), rotation },
           size,
           this.floorplan,
-          this.catalog.sizeOf,
+          this.catalog.shapeOf,
           this.placement,
         )
     const id = this.floorplan.addItem({

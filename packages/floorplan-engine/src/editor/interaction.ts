@@ -566,7 +566,7 @@ export class Interaction {
       world,
       this.floorplan,
       this.snapping.cornerTolerance * this.viewport.metresPerPixel,
-      this.catalog.sizeOf,
+      this.catalog.shapeOf,
     )
   }
 

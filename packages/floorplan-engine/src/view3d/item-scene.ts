@@ -233,7 +233,7 @@ export class ItemScene {
   }
 
   private updateOutlines(): void {
-    const overlaps = findOverlaps(this.floorplan, this.catalog.sizeOf)
+    const overlaps = findOverlaps(this.floorplan, this.catalog.shapeOf)
     for (const [id, entry] of this.entries) {
       const selected = this.selection?.kind === 'item' && this.selection.id === id
       const overlapping = overlaps.has(id)

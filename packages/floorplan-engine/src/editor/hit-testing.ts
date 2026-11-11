@@ -3,7 +3,7 @@ import { distance, distanceToSegment, type Point } from '../model/geometry.js'
 import { itemAt, itemAxes } from '../model/item-geometry.js'
 import { openingAt } from '../model/wall-openings.js'
 import type { Item } from '../schema/plan.js'
-import type { ItemSize } from '../schema/item-definition.js'
+import type { ItemShape, ItemSize } from '../schema/item-definition.js'
 
 export type Hit =
   | { kind: 'corner'; id: string }
@@ -17,7 +17,7 @@ export const ROTATE_HANDLE_OFFSET = 22
 
 /**
  * What is under a world point: the nearest corner within `tolerance` metres, else a door or
- * window whose gap contains the point, else an item whose outline contains it, else the nearest
+ * window whose gap contains the point, else an item whose footprint contains it, else the nearest
  * wall within `tolerance` of its band, else nothing. Corners win so a shared end stays
  * grabbable; openings and items win over walls, which they sit in or against.
  */
@@ -25,7 +25,7 @@ export function hitTest(
   point: Point,
   floorplan: Floorplan,
   tolerance: number,
-  sizeOf?: (catalogKey: string) => ItemSize,
+  shapeOf?: (catalogKey: string) => ItemShape,
 ): Hit {
   let best: Hit = null
   let bestDistance = tolerance
@@ -41,8 +41,8 @@ export function hitTest(
   const opening = openingAt(point, floorplan, tolerance / 2)
   if (opening) return { kind: 'opening', id: opening }
 
-  if (sizeOf) {
-    const item = itemAt(point, floorplan, sizeOf)
+  if (shapeOf) {
+    const item = itemAt(point, floorplan, shapeOf)
     if (item) return { kind: 'item', id: item }
   }
 
