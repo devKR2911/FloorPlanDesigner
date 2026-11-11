@@ -1,3 +1,5 @@
+// This test reads files from disk, so it alone in the web app uses Node's types.
+/// <reference types="node" />
 import { existsSync, readFileSync } from 'node:fs'
 import { catalogManifestSchema } from '@floorplandesigner/shared'
 import { describe, expect, it } from 'vitest'
