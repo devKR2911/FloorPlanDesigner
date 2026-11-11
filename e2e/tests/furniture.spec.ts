@@ -36,21 +36,7 @@ test('placing furniture in 2D: free spots, snapping to a wall, turning and delet
   // Two more items asked for at the same spot each find a free one.
   await catalogueButton(page, 'Chair').click()
   await catalogueButton(page, 'Chair').click()
-  const overlapping = await withEngine(page, (engine) => {
-    const items = engine.floorplan.items
-    const size = engine.catalog.sizeOf
-    let pairs = 0
-    for (let i = 0; i < items.length; i++) {
-      for (let j = i + 1; j < items.length; j++) {
-        const a = size(items[i]!.catalogKey)
-        const b = size(items[j]!.catalogKey)
-        const dx = Math.abs(items[i]!.position.x - items[j]!.position.x)
-        const dy = Math.abs(items[i]!.position.y - items[j]!.position.y)
-        if (dx < (a.width + b.width) / 2 - 0.01 && dy < (a.depth + b.depth) / 2 - 0.01) pairs++
-      }
-    }
-    return pairs
-  })
+  const overlapping = await withEngine(page, (engine) => engine.overlappingItems().size)
   expect(overlapping).toBe(0)
   expect((await counts(page)).items).toBe(3)
 

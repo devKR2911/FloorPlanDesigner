@@ -29,6 +29,20 @@ describe('catalogue manifest', () => {
     }
   })
 
+  it('gives round and L-shaped items a footprint, and plain boxes none', () => {
+    const footprints = new Map(manifest.items.map((item) => [item.key, item.footprint]))
+    // Measured from the model: the round table is a hexagon.
+    expect(footprints.get('table-round')).toHaveLength(1)
+    expect(footprints.get('table-round')![0]).toHaveLength(6)
+    // Written in the source list: an L is two overlapping rectangles.
+    for (const key of ['lounge-sofa-corner', 'lounge-sofa-long', 'desk-corner']) {
+      expect([key, footprints.get(key)?.length]).toEqual([key, 2])
+    }
+    for (const key of ['lounge-sofa', 'bed-double', 'table']) {
+      expect([key, footprints.get(key)]).toEqual([key, undefined])
+    }
+  })
+
   it('ships the models with their licence', () => {
     expect(read('../../public/models/kenney-furniture-kit/License.txt')).toContain('CC0')
   })

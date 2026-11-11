@@ -1,17 +1,45 @@
 {
-  "$comment": "The starter catalogue. Run `pnpm --filter @floorplandesigner/web build:catalog` after editing to regenerate manifest.json. Sizes are measured from the models, never typed by hand.",
+  "$comment": "The starter catalogue. Run `pnpm --filter @floorplandesigner/web build:catalog` after editing to regenerate manifest.json. Sizes are measured from the models, never typed by hand. Outlines on the floor are measured too; give a `footprint` only for a shape that is not convex, such as an L, as overlapping convex pieces (see the add-catalog-item skill).",
   "folder": "/models/kenney-furniture-kit",
   "scale": 2,
   "items": [
     { "key": "lounge-sofa", "file": "loungeSofa", "name": "Sofa", "category": "Living room" },
     {
       "key": "lounge-sofa-long",
+      "footprint": [
+        [
+          [-0.5, 0],
+          [0.5, 0],
+          [0.5, 0.5],
+          [-0.5, 0.5]
+        ],
+        [
+          [0, -0.5],
+          [0.5, -0.5],
+          [0.5, 0.5],
+          [0, 0.5]
+        ]
+      ],
       "file": "loungeSofaLong",
       "name": "Sofa with chaise",
       "category": "Living room"
     },
     {
       "key": "lounge-sofa-corner",
+      "footprint": [
+        [
+          [-0.5, 0.1],
+          [0.5, 0.1],
+          [0.5, 0.5],
+          [-0.5, 0.5]
+        ],
+        [
+          [0.1, -0.5],
+          [0.5, -0.5],
+          [0.5, 0.5],
+          [0.1, 0.5]
+        ]
+      ],
       "file": "loungeSofaCorner",
       "name": "Corner sofa",
       "category": "Living room"
@@ -130,7 +158,26 @@
     { "key": "bathroom-sink", "file": "bathroomSink", "name": "Washbasin", "category": "Bathroom" },
     { "key": "washer", "file": "washer", "name": "Washing machine", "category": "Bathroom" },
     { "key": "desk", "file": "desk", "name": "Desk", "category": "Office" },
-    { "key": "desk-corner", "file": "deskCorner", "name": "Corner desk", "category": "Office" },
+    {
+      "key": "desk-corner",
+      "footprint": [
+        [
+          [-0.5, 0.1],
+          [0.5, 0.1],
+          [0.5, 0.5],
+          [-0.5, 0.5]
+        ],
+        [
+          [0.1, -0.5],
+          [0.5, -0.5],
+          [0.5, 0.5],
+          [0.1, 0.5]
+        ]
+      ],
+      "file": "deskCorner",
+      "name": "Corner desk",
+      "category": "Office"
+    },
     { "key": "chair-desk", "file": "chairDesk", "name": "Office chair", "category": "Office" }
   ]
 }

@@ -3,3 +3,5 @@ node_modules
 pnpm-lock.yaml
 apps/api/drizzle
 apps/web/public
+# Written by apps/web/scripts/build-catalog.mjs, with each footprint piece on one line
+apps/web/src/catalog/manifest.json
