@@ -157,6 +157,58 @@ export class PlanEditor {
     this.scheduleRender()
   }
 
+  /**
+   * A picture of the whole plan, fitted into `width` by `height` CSS pixels: rooms, items, walls
+   * and openings, without the grid, dimensions, handles or selection. Returns a PNG data URL,
+   * or `null` for a plan with nothing in it.
+   */
+  snapshot(options: { width: number; height: number; padding?: number }): string | null {
+    const { width, height, padding = 12 } = options
+    const { floorplan } = this
+    const bounds = boundingBox([
+      ...floorplan.corners,
+      ...floorplan.items.map((item) => item.position),
+    ])
+    if (!bounds) return null
+
+    // Sized by hand, not with `fit()`, so that a very large plan is shrunk to fit all the same.
+    const viewport = new Viewport(width, height)
+    const spanX = Math.max(bounds.max.x - bounds.min.x, 1)
+    const spanY = Math.max(bounds.max.y - bounds.min.y, 1)
+    viewport.scale = Math.min(
+      Math.max(width - 2 * padding, 1) / spanX,
+      Math.max(height - 2 * padding, 1) / spanY,
+    )
+    viewport.centreOn({
+      x: (bounds.min.x + bounds.max.x) / 2,
+      y: (bounds.min.y + bounds.max.y) / 2,
+    })
+
+    const ratio = 2
+    const canvas = document.createElement('canvas')
+    canvas.width = width * ratio
+    canvas.height = height * ratio
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    render(context, {
+      floorplan,
+      viewport,
+      hover: null,
+      selection: null,
+      preview: null,
+      theme: this.theme,
+      sizeOf: this.catalog.sizeOf,
+      overlaps: new Set(),
+      rotateHandle: null,
+      rotateHandleHover: false,
+      unfitOpenings: unfitOpenings(floorplan),
+      draggedOpening: null,
+      plain: true,
+    })
+    return canvas.toDataURL('image/png')
+  }
+
   deleteSelection(): boolean {
     return this.interaction.deleteSelection()
   }

@@ -82,6 +82,11 @@ export interface RenderState {
   unfitOpenings: ReadonlySet<string>
   /** The door or window being dragged, which shows its distances to the ends of its wall. */
   draggedOpening: string | null
+  /**
+   * Draws only the plan itself: rooms, items, walls and openings, without the grid, the
+   * dimensions, the room areas or the corner handles. Used for pictures of a plan.
+   */
+  plain?: boolean
 }
 
 /** Scale above which the 0.1 m grid lines are drawn. */
@@ -106,11 +111,12 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   ctx.fillRect(0, 0, viewport.width, viewport.height)
   ctx.font = theme.font
 
-  drawGrid(ctx, state)
+  if (!state.plain) drawGrid(ctx, state)
   drawRooms(ctx, state)
   drawItems(ctx, state)
   drawWalls(ctx, state)
   drawOpenings(ctx, state)
+  if (state.plain) return
   drawDimensions(ctx, state)
   drawCorners(ctx, state)
   drawPreview(ctx, state)
@@ -144,7 +150,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, { viewport, theme }: RenderStat
 
 function drawRooms(
   ctx: CanvasRenderingContext2D,
-  { floorplan, viewport, theme }: RenderState,
+  { floorplan, viewport, theme, plain }: RenderState,
 ): void {
   for (const room of floorplan.rooms) {
     const outline = room.interior.length >= 3 ? room.interior : room.polygon
@@ -155,6 +161,7 @@ function drawRooms(
     )
     ctx.fill()
 
+    if (plain) continue
     const label = viewport.toScreen(room.centroid)
     ctx.fillStyle = theme.roomLabel
     ctx.textAlign = 'center'
