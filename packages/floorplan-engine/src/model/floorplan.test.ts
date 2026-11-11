@@ -19,7 +19,7 @@ function squarePlan(): Plan {
       { id: 'cd', start: 'c', end: 'd', thickness: 0.2, height: 2.5 },
       { id: 'da', start: 'd', end: 'a', thickness: 0.2, height: 2.5 },
     ],
-    items: [{ id: 'i1', catalogKey: 'sofa', position: { x: 1, y: 0, z: 1 }, rotation: 0 }],
+    items: [{ id: 'i1', catalogKey: 'sofa', position: { x: 1, y: 1 }, elevation: 0, rotation: 0 }],
   }
 }
 

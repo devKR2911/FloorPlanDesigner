@@ -1,24 +1,14 @@
+import { itemDefinitionSchema, placementTypeSchema } from '@floorplandesigner/engine/schema'
 import { z } from 'zod'
 
-/** Where an item may be placed. */
-export const placementTypeSchema = z.enum(['floor', 'wall', 'ceiling'])
+export { placementTypeSchema }
 
-export const catalogItemSchema = z.object({
-  /** Stable identifier, stored in plans as `catalogKey`. */
-  key: z.string().min(1),
+/** An item in the app's catalogue: what the engine needs, plus what the catalogue panel shows. */
+export const catalogItemSchema = itemDefinitionSchema.extend({
   name: z.string().min(1),
   category: z.string().min(1),
-  /** URL or path of the GLB model file. */
-  model: z.string().min(1),
   /** URL or path of the thumbnail image. */
   thumbnail: z.string().min(1),
-  /** Bounding size in metres. */
-  size: z.object({
-    width: z.number().positive(),
-    height: z.number().positive(),
-    depth: z.number().positive(),
-  }),
-  placement: placementTypeSchema,
 })
 
 export const catalogManifestSchema = z

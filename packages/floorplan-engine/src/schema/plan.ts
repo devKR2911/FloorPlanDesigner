@@ -21,14 +21,19 @@ export const wallSchema = z.object({
   height: z.number().positive(),
 })
 
-/** A placed catalogue item, such as a piece of furniture. */
+/**
+ * A placed catalogue item, such as a piece of furniture. At rotation 0 its width runs along the
+ * plan's `x` axis and its back faces the plan's `+y`, up the page.
+ */
 export const itemSchema = z.object({
   id: idSchema,
   /** Key of the item in the app's catalogue. The engine never stores model URLs in a plan. */
   catalogKey: z.string().min(1),
-  /** Position in metres. `y` is height above the floor. */
-  position: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-  /** Rotation around the vertical axis, in radians. */
+  /** The centre of the item on the plan, in metres. */
+  position: z.object({ x: z.number(), y: z.number() }),
+  /** Height of the item's base above the floor, in metres. 0 for items that stand on the floor. */
+  elevation: z.number().min(0),
+  /** Rotation on the plan, in radians, counter-clockwise. */
   rotation: z.number(),
 })
 

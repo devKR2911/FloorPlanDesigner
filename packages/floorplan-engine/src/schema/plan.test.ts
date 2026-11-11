@@ -8,7 +8,7 @@ const validPlan: Plan = {
     { id: 'c2', x: 4, y: 0 },
   ],
   walls: [{ id: 'w1', start: 'c1', end: 'c2', thickness: 0.1, height: 2.5 }],
-  items: [{ id: 'i1', catalogKey: 'sofa', position: { x: 1, y: 0, z: 1 }, rotation: 0 }],
+  items: [{ id: 'i1', catalogKey: 'sofa', position: { x: 1, y: 1 }, elevation: 0, rotation: 0 }],
 }
 
 function issuePaths(input: unknown): string[] {
