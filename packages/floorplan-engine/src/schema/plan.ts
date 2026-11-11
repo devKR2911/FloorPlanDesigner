@@ -58,7 +58,17 @@ export const planSchema = z
     reportDuplicates('items')
 
     const cornerIds = new Set(plan.corners.map((corner) => corner.id))
+    const joinedPairs = new Set<string>()
     plan.walls.forEach((wall, index) => {
+      const pair = [wall.start, wall.end].sort().join('\u0000')
+      if (joinedPairs.has(pair)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'These corners are already joined by another wall',
+          path: ['walls', index],
+        })
+      }
+      joinedPairs.add(pair)
       for (const end of ['start', 'end'] as const) {
         if (!cornerIds.has(wall[end])) {
           ctx.addIssue({

@@ -43,6 +43,12 @@ describe('planSchema', () => {
     expect(issuePaths(plan)).toEqual(['walls.0.end'])
   })
 
+  it('rejects two walls between the same corners, in either direction', () => {
+    const reversed = { id: 'w2', start: 'c2', end: 'c1', thickness: 0.1, height: 2.5 }
+    const plan = { ...validPlan, walls: [...validPlan.walls, reversed] }
+    expect(issuePaths(plan)).toEqual(['walls.1'])
+  })
+
   it('rejects duplicate ids', () => {
     const plan = { ...validPlan, corners: [...validPlan.corners, { id: 'c1', x: 9, y: 9 }] }
     expect(issuePaths(plan)).toEqual(['corners.2.id'])
