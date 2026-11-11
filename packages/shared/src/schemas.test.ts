@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { catalogManifestSchema, type CatalogItem } from './catalog.js'
-import { createPlanRequestSchema, updatePlanRequestSchema } from './plans.js'
+import {
+  MAX_THUMBNAIL_LENGTH,
+  createPlanRequestSchema,
+  planSummarySchema,
+  updatePlanRequestSchema,
+} from './plans.js'
+
+/** A one-pixel PNG. */
+const png =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg=='
 
 // As saved before doors and windows existed: with no `openings` list.
 const emptyDocument = { version: 1, corners: [], walls: [], items: [] }
@@ -41,6 +50,49 @@ describe('updatePlanRequestSchema', () => {
 
   it('rejects an empty body', () => {
     expect(updatePlanRequestSchema.safeParse({}).success).toBe(false)
+  })
+
+  it('accepts a thumbnail on its own, or null to remove it', () => {
+    expect(updatePlanRequestSchema.parse({ thumbnail: png })).toEqual({ thumbnail: png })
+    expect(updatePlanRequestSchema.parse({ thumbnail: null })).toEqual({ thumbnail: null })
+  })
+})
+
+describe('plan thumbnails', () => {
+  it('are optional when creating a plan', () => {
+    const body = { name: 'Flat', document: emptyDocument }
+    expect(createPlanRequestSchema.parse(body).thumbnail).toBeUndefined()
+    expect(createPlanRequestSchema.parse({ ...body, thumbnail: png }).thumbnail).toBe(png)
+  })
+
+  it('must be PNG data URLs', () => {
+    for (const thumbnail of [
+      'https://example.com/plan.png',
+      'data:image/jpeg;base64,AAAA',
+      'data:image/png;base64,not base64!',
+      '',
+    ]) {
+      expect(updatePlanRequestSchema.safeParse({ thumbnail }).success).toBe(false)
+    }
+  })
+
+  it('must not be too large', () => {
+    const prefix = 'data:image/png;base64,'
+    const largest = prefix + 'A'.repeat(MAX_THUMBNAIL_LENGTH - prefix.length)
+    expect(updatePlanRequestSchema.safeParse({ thumbnail: largest }).success).toBe(true)
+    expect(updatePlanRequestSchema.safeParse({ thumbnail: largest + 'A' }).success).toBe(false)
+  })
+
+  it('are part of a plan summary, as a picture or null', () => {
+    const summary = {
+      id: '2b0f6c1e-7a57-4f0b-9c39-0d3a0f6a1c11',
+      name: 'Flat',
+      createdAt: '2026-11-11T10:00:00.000Z',
+      updatedAt: '2026-11-11T10:00:00.000Z',
+    }
+    expect(planSummarySchema.safeParse({ ...summary, thumbnail: null }).success).toBe(true)
+    expect(planSummarySchema.safeParse({ ...summary, thumbnail: png }).success).toBe(true)
+    expect(planSummarySchema.safeParse(summary).success).toBe(false)
   })
 })
 

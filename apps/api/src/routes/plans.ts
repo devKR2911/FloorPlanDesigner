@@ -16,6 +16,7 @@ type PlanRow = typeof plans.$inferSelect
 const toSummary = (row: Omit<PlanRow, 'document'>): PlanSummary => ({
   id: row.id,
   name: row.name,
+  thumbnail: row.thumbnail,
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 })
@@ -44,6 +45,7 @@ export function createPlansRoutes(db: Database) {
         .select({
           id: plans.id,
           name: plans.name,
+          thumbnail: plans.thumbnail,
           createdAt: plans.createdAt,
           updatedAt: plans.updatedAt,
         })

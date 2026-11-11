@@ -36,6 +36,17 @@ describe('request validation', () => {
     ])
   })
 
+  it('rejects a thumbnail that is not a PNG data URL', async () => {
+    const document = { version: 1, corners: [], walls: [], items: [] }
+    const response = await postPlan(
+      JSON.stringify({ name: 'Flat', document, thumbnail: 'https://example.com/plan.png' }),
+    )
+
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { issues: { path: unknown[] }[] }
+    expect(body.issues.map((issue) => issue.path.join('.'))).toEqual(['thumbnail'])
+  })
+
   it('rejects a plan without a name', async () => {
     const document = { version: 1, corners: [], walls: [], items: [] }
     const response = await postPlan(JSON.stringify({ document }))
