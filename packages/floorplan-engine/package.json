@@ -1,0 +1,41 @@
+{
+  "name": "@floorplandesigner/engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Floor-plan engine: plan format, 2D editor and 3D view. No React.",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "default": "./dist/schema.js"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && vite build && tsc -p tsconfig.build.json",
+    "dev": "concurrently -k -n js,types \"vite build --watch\" \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\"",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "peerDependencies": {
+    "three": ">=0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "catalog:",
+    "concurrently": "^10.0.7",
+    "three": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}
