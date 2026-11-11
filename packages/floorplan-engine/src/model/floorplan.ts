@@ -15,6 +15,7 @@ import {
   signedArea,
   type Point,
 } from './geometry.js'
+import { normalizeAngle } from './item-geometry.js'
 import { findRooms, type WallSide } from './rooms.js'
 
 export interface FloorplanOptions {
@@ -42,10 +43,13 @@ export interface Room {
   readonly centroid: Point
 }
 
-export type FloorplanChangeKind = 'load' | 'corners' | 'walls'
+export type FloorplanChangeKind = 'load' | 'corners' | 'walls' | 'items'
 
 export interface FloorplanChange {
-  /** `walls` when the set of walls changed (corners may have changed too), `corners` when only corners did. */
+  /**
+   * `walls` when the set of walls changed (corners may have changed too), `corners` when only
+   * corners did, and `items` when only items did.
+   */
   kind: FloorplanChangeKind
   /** True when the set of rooms changed. A room that only changed shape keeps its id and does not count. */
   roomsChanged: boolean
@@ -72,7 +76,7 @@ export class Floorplan {
 
   private readonly cornerMap = new Map<string, Corner>()
   private readonly wallMap = new Map<string, Wall>()
-  private itemList: Item[] = []
+  private readonly itemMap = new Map<string, Item>()
   private roomList: Room[] = []
   private roomMap = new Map<string, Room>()
   private wallSideMap = new Map<string, Partial<Record<WallSide, string>>>()
@@ -99,7 +103,7 @@ export class Floorplan {
   }
 
   get items(): readonly Readonly<Item>[] {
-    return this.itemList
+    return [...this.itemMap.values()]
   }
 
   getCorner(id: string): Readonly<Corner> | undefined {
@@ -108,6 +112,10 @@ export class Floorplan {
 
   getWall(id: string): Readonly<Wall> | undefined {
     return this.wallMap.get(id)
+  }
+
+  getItem(id: string): Readonly<Item> | undefined {
+    return this.itemMap.get(id)
   }
 
   getRoom(id: string): Room | undefined {
@@ -146,7 +154,8 @@ export class Floorplan {
     this.wallMap.clear()
     for (const corner of plan.corners) this.cornerMap.set(corner.id, { ...corner })
     for (const wall of plan.walls) this.wallMap.set(wall.id, { ...wall })
-    this.itemList = structuredClone(plan.items)
+    this.itemMap.clear()
+    for (const item of structuredClone(plan.items)) this.itemMap.set(item.id, item)
     this.commit('load')
   }
 
@@ -156,7 +165,7 @@ export class Floorplan {
       version: PLAN_FORMAT_VERSION,
       corners: [...this.cornerMap.values()],
       walls: [...this.wallMap.values()],
-      items: this.itemList,
+      items: [...this.itemMap.values()],
     })
   }
 
@@ -278,6 +287,54 @@ export class Floorplan {
     this.commit('walls')
   }
 
+  /**
+   * Adds an item and returns its id. Its position is used as given: placement rules such as
+   * snapping to walls are applied by the caller, with `placeItem()`.
+   */
+  addItem(item: {
+    catalogKey: string
+    position: Point
+    rotation?: number
+    elevation?: number
+  }): string {
+    const added: Item = {
+      id: newId(),
+      catalogKey: nonEmpty(item.catalogKey),
+      position: finitePoint(item.position),
+      elevation: nonNegative(item.elevation ?? 0),
+      rotation: normalizeAngle(finite(item.rotation ?? 0, 'rotation')),
+    }
+    this.itemMap.set(added.id, added)
+    this.commit('items')
+    return added.id
+  }
+
+  /** Moves, turns or raises an item. Fires one change. */
+  updateItem(
+    id: string,
+    changes: { position?: Point; rotation?: number; elevation?: number },
+  ): void {
+    const item = this.requireItem(id)
+    if (changes.position !== undefined) item.position = finitePoint(changes.position)
+    if (changes.rotation !== undefined) {
+      item.rotation = normalizeAngle(finite(changes.rotation, 'rotation'))
+    }
+    if (changes.elevation !== undefined) item.elevation = nonNegative(changes.elevation)
+    this.commit('items')
+  }
+
+  removeItem(id: string): void {
+    this.requireItem(id)
+    this.itemMap.delete(id)
+    this.commit('items')
+  }
+
+  private requireItem(id: string): Item {
+    const item = this.itemMap.get(id)
+    if (!item) throw new FloorplanError(`Unknown item "${id}"`)
+    return item
+  }
+
   private requireCorner(id: string): Corner {
     const corner = this.cornerMap.get(id)
     if (!corner) throw new FloorplanError(`Unknown corner "${id}"`)
@@ -386,6 +443,11 @@ export class Floorplan {
   }
 
   private commit(kind: FloorplanChangeKind): void {
+    // Items never change the walls, so the rooms stay as they are.
+    if (kind === 'items') {
+      this.emitter.emit('change', { kind, roomsChanged: false })
+      return
+    }
     const previousRoomIds = this.roomList.map((room) => room.id).join('|')
     this.recomputeRooms()
     const roomsChanged = previousRoomIds !== this.roomList.map((room) => room.id).join('|')
@@ -415,6 +477,27 @@ export class Floorplan {
 
 function newId(): string {
   return crypto.randomUUID()
+}
+
+function finite(value: number, name: string): number {
+  if (!Number.isFinite(value)) throw new FloorplanError(`An item's ${name} must be a number`)
+  return value
+}
+
+function finitePoint(point: Point): { x: number; y: number } {
+  return { x: finite(point.x, 'position'), y: finite(point.y, 'position') }
+}
+
+function nonNegative(value: number): number {
+  if (!(value >= 0) || !Number.isFinite(value)) {
+    throw new FloorplanError("An item's elevation must be zero or more")
+  }
+  return value
+}
+
+function nonEmpty(key: string): string {
+  if (key.length === 0) throw new FloorplanError('An item needs a catalogue key')
+  return key
 }
 
 function positive(value: number, name: string): number {
