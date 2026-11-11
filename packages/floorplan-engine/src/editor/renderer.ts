@@ -40,6 +40,12 @@ export interface EditorTheme {
   cornerStroke: string
   cornerHover: string
   cornerSelected: string
+  /** Line and corner colour of a hovered element in delete mode. */
+  deleteHover: string
+  /** Band fill of a hovered wall in delete mode. */
+  deleteHoverFill: string
+  /** Fill of a hovered item in delete mode. */
+  itemDeleteHover: string
   dimension: string
   preview: string
   snap: string
@@ -71,6 +77,10 @@ export const defaultTheme: EditorTheme = {
   cornerStroke: '#3f3f46',
   cornerHover: '#2563eb',
   cornerSelected: '#1d4ed8',
+  // Hover colours in delete mode, where hovering means "this will be removed".
+  deleteHover: '#dc2626',
+  deleteHoverFill: '#fde2e2',
+  itemDeleteHover: 'rgba(220, 38, 38, 0.18)',
   dimension: '#71717a',
   preview: '#2563eb',
   snap: '#f59e0b',
@@ -94,11 +104,21 @@ export interface RenderState {
   unfitOpenings: ReadonlySet<string>
   /** The door or window being dragged, which shows its distances to the ends of its wall. */
   draggedOpening: string | null
+  /** True in delete mode: the hovered element is drawn in red, since a click removes it. */
+  deleteHover?: boolean
   /**
    * Draws only the plan itself: rooms, items, walls and openings, without the grid, the
    * dimensions, the room areas or the corner handles. Used for pictures of a plan.
    */
   plain?: boolean
+}
+
+/** The colours a hovered element is drawn in: blue when it can be edited, red when a click removes it. */
+function hoverColours(state: RenderState): { line: string; fill: string; item: string } {
+  const { theme } = state
+  return state.deleteHover
+    ? { line: theme.deleteHover, fill: theme.deleteHoverFill, item: theme.itemDeleteHover }
+    : { line: theme.wallHover, fill: theme.wallHoverFill, item: theme.itemHover }
 }
 
 /** Scale above which the 0.1 m grid lines are drawn. */
@@ -188,6 +208,7 @@ function drawRooms(
 
 function drawItems(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { floorplan, viewport, theme, hover, selection, overlaps, sizeOf } = state
+  const hoverColour = hoverColours(state)
   for (const item of floorplan.items) {
     const selected = selection?.kind === 'item' && selection.id === item.id
     const hovered = hover?.kind === 'item' && hover.id === item.id
@@ -197,11 +218,11 @@ function drawItems(ctx: CanvasRenderingContext2D, state: RenderState): void {
       : selected
         ? theme.itemSelected
         : hovered
-          ? theme.itemHover
+          ? hoverColour.item
           : theme.item
     tracePolygon(ctx, outline)
     ctx.fill()
-    ctx.strokeStyle = selected || hovered ? theme.wallSelected : theme.itemStroke
+    ctx.strokeStyle = selected ? theme.wallSelected : hovered ? hoverColour.line : theme.itemStroke
     ctx.lineWidth = selected ? 1.5 : 1
     ctx.stroke()
     // A heavier line along the front, so it is clear which way the item faces.
@@ -247,6 +268,7 @@ function drawRotateHandle(ctx: CanvasRenderingContext2D, state: RenderState): vo
  */
 function drawWalls(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { floorplan, viewport, theme, hover, selection } = state
+  const hoverColour = hoverColours(state)
   // Each wall's outline once it is joined to its neighbours, so corners close without a notch.
   const footprints = new Map(
     wallFootprints(floorplan.corners, floorplan.walls).map((footprint) => [
@@ -267,11 +289,7 @@ function drawWalls(ctx: CanvasRenderingContext2D, state: RenderState): void {
 
   for (const { footprint, banded, selected, hovered } of walls) {
     if (!footprint || !banded) continue
-    ctx.fillStyle = selected
-      ? theme.wallSelectedFill
-      : hovered
-        ? theme.wallHoverFill
-        : theme.wallFill
+    ctx.fillStyle = selected ? theme.wallSelectedFill : hovered ? hoverColour.fill : theme.wallFill
     tracePolygon(
       ctx,
       footprint.polygon.map((point) => viewport.toScreen(point)),
@@ -301,7 +319,7 @@ function drawWalls(ctx: CanvasRenderingContext2D, state: RenderState): void {
   // Selected and hovered walls last, so their colour is not covered by a neighbour's line.
   const order = [...walls].sort((a, b) => rank(a) - rank(b))
   for (const { start, end, selected, hovered } of order) {
-    ctx.strokeStyle = selected ? theme.wallSelected : hovered ? theme.wallHover : theme.wall
+    ctx.strokeStyle = selected ? theme.wallSelected : hovered ? hoverColour.line : theme.wall
     ctx.lineWidth = selected || hovered ? WALL_LINE_WIDTH_ACTIVE : WALL_LINE_WIDTH
     ctx.beginPath()
     ctx.moveTo(start.x, start.y)
@@ -320,6 +338,7 @@ const ARC_STEPS = 16
 
 function drawOpenings(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { floorplan, viewport, theme, hover, selection, unfitOpenings, draggedOpening } = state
+  const hoverColour = hoverColours(state)
   for (const opening of floorplan.openings) {
     const wall = floorplan.getWall(opening.wallId)
     const start = wall && floorplan.getCorner(wall.start)
@@ -336,7 +355,7 @@ function drawOpenings(ctx: CanvasRenderingContext2D, state: RenderState): void {
       : selected
         ? theme.wallSelected
         : hovered
-          ? theme.wallHover
+          ? hoverColour.line
           : theme.opening
     ctx.lineWidth = selected || hovered ? 2 : 1.5
 
@@ -508,6 +527,7 @@ function drawLabel(
 
 function drawCorners(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { floorplan, viewport, theme, hover, selection } = state
+  const hoverColour = state.deleteHover ? theme.deleteHover : theme.cornerHover
   ctx.lineWidth = 1.5
   for (const corner of floorplan.corners) {
     const selected = selection?.kind === 'corner' && selection.id === corner.id
@@ -515,13 +535,9 @@ function drawCorners(ctx: CanvasRenderingContext2D, state: RenderState): void {
     const p = viewport.toScreen(corner)
     ctx.beginPath()
     ctx.arc(p.x, p.y, selected || hovered ? CORNER_RADIUS_ACTIVE : CORNER_RADIUS, 0, Math.PI * 2)
-    ctx.fillStyle = selected ? theme.cornerSelected : hovered ? theme.cornerHover : theme.corner
+    ctx.fillStyle = selected ? theme.cornerSelected : hovered ? hoverColour : theme.corner
     ctx.fill()
-    ctx.strokeStyle = selected
-      ? theme.cornerSelected
-      : hovered
-        ? theme.cornerHover
-        : theme.cornerStroke
+    ctx.strokeStyle = selected ? theme.cornerSelected : hovered ? hoverColour : theme.cornerStroke
     ctx.stroke()
   }
 }

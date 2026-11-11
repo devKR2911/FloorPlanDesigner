@@ -337,6 +337,7 @@ export class PlanEditor {
       selection,
       preview: this.interaction.preview,
       theme: this.theme,
+      deleteHover: this.interaction.mode === 'delete',
       sizeOf: this.catalog.sizeOf,
       overlaps: findOverlaps(this.floorplan, this.catalog.sizeOf),
       rotateHandle: selectedItem
