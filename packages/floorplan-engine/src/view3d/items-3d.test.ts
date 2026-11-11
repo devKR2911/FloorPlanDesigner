@@ -12,7 +12,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import { Floorplan } from '../model/floorplan.js'
 import { ItemCatalog } from '../model/item-catalog.js'
-import { floorPointFromRay } from './item-dragging.js'
+import { floorPointFromRay, wallOffsetFromRay } from './item-dragging.js'
 import { ItemScene, type ItemLoadError } from './item-scene.js'
 import { ModelLibrary } from './model-library.js'
 
@@ -230,5 +230,30 @@ describe('floorPointFromRay', () => {
     expect(floorPointFromRay({ x: 0, y: 1, z: 0 }, { x: 1, y: 0, z: 0 })).toBeNull()
     expect(floorPointFromRay({ x: 0, y: 1, z: 0 }, { x: 0, y: 1, z: 0 })).toBeNull()
     expect(floorPointFromRay({ x: 0, y: 1, z: 0 }, { x: 1, y: -0.001, z: 0 })).toBeNull()
+  })
+})
+
+describe('wallOffsetFromRay', () => {
+  // A wall from (1, 0) to (5, 0) on the plan: along scene x, in the plane z = 0.
+  const start = { x: 1, y: 0 }
+  const end = { x: 5, y: 0 }
+
+  it('finds how far along the wall a ray meets it, whatever the height', () => {
+    // From in front of the wall (plan y = -4 is scene z = 4), aimed at scene (3, 1, 0).
+    const along = wallOffsetFromRay({ x: 3, y: 5, z: 4 }, { x: 0, y: -4, z: -4 }, start, end)
+    expect(along).toBeCloseTo(2)
+    const slanted = wallOffsetFromRay({ x: 0, y: 2, z: 4 }, { x: 4, y: -1, z: -4 }, start, end)
+    expect(slanted).toBeCloseTo(3)
+  })
+
+  it('reports positions past the ends of the wall', () => {
+    expect(wallOffsetFromRay({ x: 0, y: 2, z: 4 }, { x: 0, y: 0, z: -1 }, start, end)).toBeCloseTo(
+      -1,
+    )
+  })
+
+  it('misses for a ray along the wall or pointing away from it', () => {
+    expect(wallOffsetFromRay({ x: 0, y: 2, z: 4 }, { x: 1, y: 0, z: 0 }, start, end)).toBeNull()
+    expect(wallOffsetFromRay({ x: 0, y: 2, z: 4 }, { x: 0, y: 0, z: 1 }, start, end)).toBeNull()
   })
 })

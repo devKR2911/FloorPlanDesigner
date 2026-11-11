@@ -5,8 +5,13 @@ import { Floorplan, FloorplanError, type FloorplanOptions } from './model/floorp
 import type { Point } from './model/geometry.js'
 import { ItemCatalog } from './model/item-catalog.js'
 import { defaultPlacementSettings, placeItem, type PlacementSettings } from './model/placement.js'
+import {
+  defaultOpeningSnapSettings,
+  projectOntoWall,
+  type OpeningSnapSettings,
+} from './model/wall-openings.js'
 import type { ItemDefinition } from './schema/item-definition.js'
-import type { Plan } from './schema/plan.js'
+import type { OpeningKind, Plan } from './schema/plan.js'
 import type { ItemLoadError } from './view3d/item-scene.js'
 import type { ModelLoader } from './view3d/model-library.js'
 import { View3D, type View3DTheme } from './view3d/view3d.js'
@@ -46,6 +51,8 @@ export class FloorplanEngine {
   readonly catalog = new ItemCatalog()
   /** Wall and grid snapping for items. Change a field and the next drag uses it. */
   readonly placement: PlacementSettings
+  /** Snapping for doors and windows dragged along a wall. Live, like `placement`. */
+  readonly openingSnap: OpeningSnapSettings = { ...defaultOpeningSnapSettings }
   /** The 2D plan editor, when a `view2d` element was given. Shares `floorplan` with the 3D view. */
   readonly editor: PlanEditor | null
   /** The 3D view: walls, floors and items drawn from `floorplan`, with its camera modes. */
@@ -64,6 +71,7 @@ export class FloorplanEngine {
       catalog: this.catalog,
       selection: this.selectionStore,
       placement: this.placement,
+      openingSnap: this.openingSnap,
     }
     this.editor = options.view2d
       ? new PlanEditor({ host: options.view2d, ...shared, ...options.editor })
@@ -132,6 +140,44 @@ export class FloorplanEngine {
   }
 
   /**
+   * Adds a door or window and selects it. It goes on the wall nearest the middle of whichever
+   * view is showing that has room for it. Sizes not given take the defaults for its kind.
+   * Throws a `FloorplanError` if no wall can take it. Returns its id.
+   */
+  addOpening(opening: {
+    kind: OpeningKind
+    width?: number
+    height?: number
+    sill?: number
+  }): string {
+    this.assertActive()
+    const centre = this.viewCentre()
+    const { floorplan } = this
+    const candidates = floorplan.walls
+      .map((wall) => {
+        const start = floorplan.getCorner(wall.start)!
+        const end = floorplan.getCorner(wall.end)!
+        const { along, distance, length } = projectOntoWall(centre, start, end)
+        const overshoot = along < 0 ? -along : along > length ? along - length : 0
+        return { wallId: wall.id, offset: along, distance: Math.hypot(distance, overshoot) }
+      })
+      .sort((a, b) => a.distance - b.distance)
+    for (const { wallId, offset } of candidates) {
+      try {
+        const id = floorplan.addOpening({ ...opening, wallId, offset })
+        this.selectionStore.set({ kind: 'opening', id })
+        return id
+      } catch (error) {
+        // This wall has no room for it; try the next nearest.
+        if (!(error instanceof FloorplanError)) throw error
+      }
+    }
+    throw new FloorplanError(
+      candidates.length === 0 ? 'There is no wall to put it on' : 'No wall has room for it',
+    )
+  }
+
+  /**
    * Validates `input` against the plan format and makes it the current plan.
    * Throws a `ZodError` if the input is not a valid plan.
    */
@@ -178,6 +224,7 @@ export class FloorplanEngine {
     const { floorplan } = this
     if (selection.kind === 'corner') return floorplan.getCorner(selection.id) !== undefined
     if (selection.kind === 'wall') return floorplan.getWall(selection.id) !== undefined
+    if (selection.kind === 'opening') return floorplan.getOpening(selection.id) !== undefined
     return floorplan.getItem(selection.id) !== undefined
   }
 

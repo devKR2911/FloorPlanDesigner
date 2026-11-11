@@ -1,3 +1,5 @@
+import { WALKER_RADIUS } from '../model/walk-collision.js'
+
 // Walking and looking in first person, as plain maths with no camera or DOM.
 
 /** Where the walker stands on the plan and where they look. */
@@ -22,6 +24,8 @@ export interface WalkSettings {
   lookSpeed: number
   /** The furthest the walker can look up or down, in radians. */
   maxPitch: number
+  /** The walker is a circle of this radius, in metres, that walls keep out. */
+  radius: number
 }
 
 export const defaultWalkSettings: WalkSettings = {
@@ -30,6 +34,7 @@ export const defaultWalkSettings: WalkSettings = {
   eyeHeight: 1.6,
   lookSpeed: 0.003,
   maxPitch: (85 * Math.PI) / 180,
+  radius: WALKER_RADIUS,
 }
 
 export interface WalkInput {

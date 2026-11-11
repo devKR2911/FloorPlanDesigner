@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { wallFootprints } from '../model/wall-footprints.js'
 import { toPlan, toScene } from './coordinates.js'
 import { buildFloorGeometry } from './floor-geometry.js'
-import { WALL_FACE, buildWallGeometry } from './wall-geometry.js'
+import { WALL_FACE, buildWallGeometry, faceRectangles } from './wall-geometry.js'
 
 interface Triangle {
   centre: Vector3
@@ -106,6 +106,72 @@ describe('buildWallGeometry', () => {
     const top = triangles(geometry).filter((triangle) => triangle.stored.y === 1)
     expect(top.reduce((sum, triangle) => sum + triangle.area, 0)).toBeCloseTo(0.8)
     for (const triangle of top) expect(triangle.facing.y).toBeCloseTo(1)
+  })
+})
+
+describe('walls with holes', () => {
+  const axis = { origin: { x: 0, y: 0 }, direction: { x: 1, y: 0 } }
+  const door = { from: 1.55, to: 2.45, bottom: 0, top: 2.1 }
+  const window = { from: 3, to: 3.8, bottom: 0.9, top: 2.1 }
+
+  function wallWith(holes: (typeof door)[]) {
+    const [footprint] = wallFootprints(
+      [
+        { id: 'a', x: 0, y: 0 },
+        { id: 'b', x: 4, y: 0 },
+      ],
+      [{ id: 'w', start: 'a', end: 'b', thickness: 0.2 }],
+    )
+    return triangles(buildWallGeometry(footprint!, 2.5, { ...axis, holes }))
+  }
+
+  const areaFacing = (all: Triangle[], x: number, y: number, z: number) =>
+    all
+      .filter((t) => t.stored.distanceTo(new Vector3(x, y, z)) < 1e-6)
+      .reduce((sum, t) => sum + t.area, 0)
+
+  it('splits a face into rectangles around its holes', () => {
+    const rectangles = faceRectangles(0, 4, 2.5, [window, door])
+    const area = rectangles.reduce((sum, r) => sum + (r.u1 - r.u0) * (r.y1 - r.y0), 0)
+    expect(area).toBeCloseTo(4 * 2.5 - 0.9 * 2.1 - 0.8 * 1.2)
+    // Left of the door, above it, between the two, below and above the window, right of it.
+    expect(rectangles).toHaveLength(6)
+    expect(faceRectangles(0, 4, 2.5, [])).toEqual([{ u0: 0, u1: 4, y0: 0, y1: 2.5 }])
+  })
+
+  it('leaves the door out of both long faces', () => {
+    const all = wallWith([door])
+    const expected = 4 * 2.5 - 0.9 * 2.1
+    // The front of a wall along x faces scene -z, the back faces +z.
+    expect(areaFacing(all, 0, 0, -1)).toBeCloseTo(expected)
+    expect(areaFacing(all, 0, 0, 1)).toBeCloseTo(expected)
+  })
+
+  it('lines the inside of a door with two sides, a top and a threshold', () => {
+    const all = wallWith([door])
+    // Besides the two inner sides, each end of the wall faces along x too: 0.2 × 2.5.
+    expect(areaFacing(all, 1, 0, 0)).toBeCloseTo(0.2 * 2.1 + 0.2 * 2.5, 2)
+    expect(areaFacing(all, -1, 0, 0)).toBeCloseTo(0.2 * 2.1 + 0.2 * 2.5, 2)
+    expect(areaFacing(all, 0, -1, 0)).toBeCloseTo(0.9 * 0.2)
+    // The threshold, plus the top of the wall.
+    expect(areaFacing(all, 0, 1, 0)).toBeCloseTo(0.9 * 0.2 + 4 * 0.2)
+  })
+
+  it('gives a window a sill at its height', () => {
+    const all = wallWith([window])
+    const sill = all.filter((t) => t.stored.y === 1 && Math.abs(t.centre.y - 0.9) < 1e-6)
+    expect(sill.reduce((sum, t) => sum + t.area, 0)).toBeCloseTo(0.8 * 0.2)
+    expect(areaFacing(all, 0, 0, 1)).toBeCloseTo(4 * 2.5 - 0.8 * 1.2)
+  })
+
+  it('winds every triangle to match its normal', () => {
+    for (const triangle of wallWith([door, window])) {
+      expect(triangle.facing.distanceTo(triangle.stored)).toBeCloseTo(0)
+    }
+  })
+
+  it('builds the same wall as before when there are no holes', () => {
+    expect(wallWith([])).toHaveLength(triangles(loneWall()).length)
   })
 })
 

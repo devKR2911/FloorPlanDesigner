@@ -15,10 +15,17 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Emitter, type Listener } from '../core/events.js'
 import { SelectionStore } from '../core/selection.js'
-import type { Floorplan } from '../model/floorplan.js'
+import { FloorplanError, type Floorplan } from '../model/floorplan.js'
 import { boundingBox, type Point } from '../model/geometry.js'
 import { ItemCatalog } from '../model/item-catalog.js'
 import { defaultPlacementSettings, placeItem, type PlacementSettings } from '../model/placement.js'
+import { moveWalker, wallBlocks, type WallBlock } from '../model/walk-collision.js'
+import {
+  defaultOpeningSnapSettings,
+  nextDoorSwing,
+  snapOpeningOffset,
+  type OpeningSnapSettings,
+} from '../model/wall-openings.js'
 import { toPlan, toScene } from './coordinates.js'
 import {
   defaultWalkSettings,
@@ -30,10 +37,10 @@ import {
   type WalkSettings,
   type WalkState,
 } from './first-person.js'
-import { floorPointFromRay } from './item-dragging.js'
+import { floorPointFromRay, wallOffsetFromRay } from './item-dragging.js'
 import { ItemScene, type ItemLoadError, type ItemObjectData } from './item-scene.js'
 import { ModelLibrary, createGltfLoader, type ModelLoader } from './model-library.js'
-import { PlanScene, type WallMeshData } from './plan-scene.js'
+import { PlanScene, type OpeningObjectData, type WallMeshData } from './plan-scene.js'
 import { easeInOut, type Tween } from './tween.js'
 import { wallsFacingCamera } from './wall-cutaway.js'
 
@@ -52,6 +59,10 @@ export interface View3DTheme {
   itemSelected: string
   /** Outline of items that overlap a wall or another item. */
   itemOverlap: string
+  /** The frame of a door or window. */
+  frame: string
+  door: string
+  glass: string
 }
 
 export const defaultView3DTheme: View3DTheme = {
@@ -63,6 +74,9 @@ export const defaultView3DTheme: View3DTheme = {
   itemPlaceholder: '#c4c4c8',
   itemSelected: '#1d4ed8',
   itemOverlap: '#dc2626',
+  frame: '#fafaf9',
+  door: '#c8a27a',
+  glass: '#a5c8e4',
 }
 
 export interface View3DOptions {
@@ -77,6 +91,8 @@ export interface View3DOptions {
   selection?: SelectionStore
   /** Wall and grid snapping for items. */
   placement?: PlacementSettings
+  /** Snapping for doors and windows dragged along a wall. */
+  openingSnap?: OpeningSnapSettings
   /** Where the Draco decoder files are served, for compressed models. */
   dracoPath?: string
   /** Replaces the GLB loader, for tests. */
@@ -119,6 +135,7 @@ export class View3D {
   readonly catalog: ItemCatalog
   readonly selection: SelectionStore
   readonly placement: PlacementSettings
+  readonly openingSnap: OpeningSnapSettings
 
   private readonly host: HTMLElement
   private readonly floorplan: Floorplan
@@ -142,6 +159,10 @@ export class View3D {
   private lookDrag: { pointerId: number; x: number; y: number } | null = null
   /** An item being dragged across the floor in orbit mode. */
   private itemDrag: { pointerId: number; id: string; offset: Point; rotation: number } | null = null
+  /** A door or window being slid along its wall in orbit mode. */
+  private openingDrag: { pointerId: number; id: string; grab: number } | null = null
+  /** The solid pieces of wall the walker cannot enter. Worked out when first needed. */
+  private walkBlocks: WallBlock[] | null = null
   /** A press on empty space, which clears the selection if it ends without moving. */
   private press: { pointerId: number; x: number; y: number } | null = null
 
@@ -161,6 +182,7 @@ export class View3D {
     this.catalog = options.catalog ?? new ItemCatalog()
     this.selection = options.selection ?? new SelectionStore()
     this.placement = options.placement ?? { ...defaultPlacementSettings }
+    this.openingSnap = options.openingSnap ?? { ...defaultOpeningSnapSettings }
 
     this.renderer = new WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -186,7 +208,11 @@ export class View3D {
     this.grid = this.createGrid(MIN_GRID_SIZE)
     this.scene.add(this.grid)
 
-    this.planScene = new PlanScene(this.floorplan, this.theme)
+    this.planScene = new PlanScene(this.floorplan, {
+      ...this.theme,
+      selected: this.theme.itemSelected,
+    })
+    this.planScene.setSelection(this.selection.current)
     this.scene.add(this.planScene.group)
 
     if (options.loadModel) {
@@ -223,10 +249,12 @@ export class View3D {
       this.itemScene.on('update', this.invalidate),
       this.itemScene.on('error', (error) => this.emitter.emit('itemError', error)),
       this.selection.on('change', (selection) => {
+        this.planScene.setSelection(selection)
         this.itemScene.setSelection(selection)
         this.invalidate()
       }),
       this.floorplan.on('change', ({ kind }) => {
+        if (kind !== 'items') this.walkBlocks = null
         if (kind !== 'load') return
         if (this.visible && this.mode === 'orbit') this.fit({ animate: false })
         else this.fitPending = true
@@ -283,6 +311,7 @@ export class View3D {
     this.heldKeys.clear()
     this.lookDrag = null
     this.itemDrag = null
+    this.openingDrag = null
     this.press = null
     if (mode === 'walk') this.enterWalk()
     else this.leaveWalk()
@@ -361,11 +390,13 @@ export class View3D {
       null,
     )
     const bounds = boundingBox(this.floorplan.corners)
-    const start =
+    const wanted =
       largest?.centroid ??
       (bounds
         ? { x: (bounds.min.x + bounds.max.x) / 2, y: (bounds.min.y + bounds.max.y) / 2 }
         : { x: 0, y: 0 })
+    // The middle of an L-shaped room can be inside a wall; step out of it.
+    const start = moveWalker(wanted, wanted, this.blocks(), this.walkSettings.radius)
     const looking = this.controls.target.clone().sub(this.camera.position)
     const heading = toPlan(looking)
     this.walk = {
@@ -496,7 +527,12 @@ export class View3D {
         tween.done?.()
       }
     } else if (this.mode === 'walk' && isMoving(input)) {
-      this.walk = stepWalk(this.walk, input, seconds, this.walkSettings)
+      const stepped = stepWalk(this.walk, input, seconds, this.walkSettings)
+      // Walls stop the walker; a doorway lets them through.
+      this.walk = {
+        ...stepped,
+        ...moveWalker(this.walk, stepped, this.blocks(), this.walkSettings.radius),
+      }
       this.applyWalkPose()
     }
 
@@ -517,10 +553,25 @@ export class View3D {
   private updateCutaway(): void {
     const lowered =
       this.mode === 'orbit' ? wallsFacingCamera(this.floorplan, toPlan(this.camera.position)) : null
+    // The wall of the selected door or window stays up, so what is being edited can be seen.
+    const selected = this.selection.current
+    if (lowered && selected?.kind === 'opening') {
+      const opening = this.floorplan.getOpening(selected.id)
+      if (opening) lowered.delete(opening.wallId)
+    }
     for (const mesh of this.planScene.wallMeshes) {
       const { id, height } = mesh.userData as WallMeshData
       mesh.scale.y = lowered?.has(id) ? Math.min(1, LOWERED_WALL_HEIGHT / height) : 1
     }
+    // A lowered wall is too low for its doors and windows, so they are hidden with it.
+    for (const object of this.planScene.openingObjects) {
+      object.visible = !lowered?.has((object.userData as OpeningObjectData).wallId)
+    }
+  }
+
+  private blocks(): WallBlock[] {
+    this.walkBlocks ??= wallBlocks(this.floorplan)
+    return this.walkBlocks
   }
 
   // The grid
@@ -556,14 +607,29 @@ export class View3D {
     this.cleanups.push(() => this.canvas.removeEventListener(name, handler))
   }
 
-  /** Runs before the orbit controls. A press on an item starts dragging it instead of orbiting. */
+  /**
+   * Runs before the orbit controls. A press on an item, door or window starts dragging it
+   * instead of orbiting.
+   */
   private readonly onPointerDownFirst = (event: PointerEvent): void => {
     if (this.mode !== 'orbit' || event.button !== 0 || this.tween) return
-    const id = this.itemUnder(event)
-    if (!id) {
+    const picked = this.pickUnder(event)
+    if (!picked) {
       this.press = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
       return
     }
+    if (picked.kind === 'opening') {
+      const opening = this.floorplan.getOpening(picked.id)
+      const along = opening && this.wallOffsetUnder(event, opening.wallId)
+      this.selection.set(picked)
+      if (!opening || along === null || along === undefined) return
+      this.controls.enabled = false
+      this.canvas.setPointerCapture(event.pointerId)
+      this.openingDrag = { pointerId: event.pointerId, id: picked.id, grab: opening.offset - along }
+      this.canvas.style.cursor = 'grabbing'
+      return
+    }
+    const { id } = picked
     const item = this.floorplan.getItem(id)
     const floor = this.floorPointUnder(event)
     if (!item || !floor) return
@@ -622,6 +688,27 @@ export class View3D {
       this.floorplan.updateItem(drag.id, { position: placed.position, rotation: placed.rotation })
       return
     }
+    const slide = this.openingDrag
+    if (slide?.pointerId === event.pointerId) {
+      const opening = this.floorplan.getOpening(slide.id)
+      const wall = opening && this.floorplan.getWall(opening.wallId)
+      const along = opening && this.wallOffsetUnder(event, opening.wallId)
+      if (!opening || !wall || along === null || along === undefined) return
+      const start = this.floorplan.getCorner(wall.start)!
+      const end = this.floorplan.getCorner(wall.end)!
+      const offset = snapOpeningOffset(
+        along + slide.grab,
+        Math.hypot(end.x - start.x, end.y - start.y),
+        event.altKey ? { ...this.openingSnap, enabled: false } : this.openingSnap,
+      )
+      try {
+        this.floorplan.updateOpening(opening.id, { offset })
+      } catch (error) {
+        // No room for it there: it stays where it is.
+        if (!(error instanceof FloorplanError)) throw error
+      }
+      return
+    }
     const press = this.press
     if (press?.pointerId === event.pointerId) {
       if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > CLICK_SLOP)
@@ -629,12 +716,16 @@ export class View3D {
       return
     }
     // Hovering, with no button held.
-    if (event.buttons === 0) this.canvas.style.cursor = this.itemUnder(event) ? 'grab' : ''
+    if (event.buttons === 0) this.canvas.style.cursor = this.pickUnder(event) ? 'grab' : ''
   }
 
   private readonly onPointerEnd = (event: PointerEvent): void => {
-    if (this.itemDrag?.pointerId === event.pointerId) {
+    if (
+      this.itemDrag?.pointerId === event.pointerId ||
+      this.openingDrag?.pointerId === event.pointerId
+    ) {
       this.itemDrag = null
+      this.openingDrag = null
       this.controls.enabled = true
       if (this.canvas.hasPointerCapture(event.pointerId)) {
         this.canvas.releasePointerCapture(event.pointerId)
@@ -672,9 +763,29 @@ export class View3D {
     this.invalidate()
   }
 
-  /** `R` turns the selected item a quarter, `Delete` removes it, `Escape` clears the selection. */
+  /**
+   * Keys for the selection. For an item, `R` turns it a quarter. For a door, `F` steps it to its
+   * next way of hanging. For both, `Delete` removes it and `Escape` clears the selection.
+   */
   private onOrbitKeyDown(event: KeyboardEvent): void {
     const selected = this.selection.current
+    if (selected?.kind === 'opening') {
+      const opening = this.floorplan.getOpening(selected.id)
+      if (!opening) return
+      const key = event.key.toLowerCase()
+      if (key === 'f' && opening.kind === 'door') {
+        this.floorplan.updateOpening(opening.id, nextDoorSwing(opening))
+      } else if (key === 'delete' || key === 'backspace') {
+        this.selection.set(null)
+        this.floorplan.removeOpening(opening.id)
+      } else if (key === 'escape') {
+        this.selection.set(null)
+      } else {
+        return
+      }
+      event.preventDefault()
+      return
+    }
     if (selected?.kind !== 'item') return
     const item = this.floorplan.getItem(selected.id)
     if (!item) return
@@ -697,17 +808,35 @@ export class View3D {
     event.preventDefault()
   }
 
-  /** The id of the item under the pointer, if any. */
-  private itemUnder(event: PointerEvent): string | null {
+  /** The item, door or window under the pointer, the nearest first, if any. */
+  private pickUnder(event: PointerEvent): { kind: 'item' | 'opening'; id: string } | null {
     this.aimRay(event)
-    for (const hit of this.raycaster.intersectObjects(this.itemScene.group.children, true)) {
+    const candidates = [...this.itemScene.group.children, ...this.planScene.openingObjects]
+    for (const hit of this.raycaster.intersectObjects(candidates, true)) {
       let object: typeof hit.object | null = hit.object
-      while (object && (object.userData as Partial<ItemObjectData>).kind !== 'item') {
+      let hidden = false
+      while (object) {
+        hidden ||= !object.visible
+        const data = object.userData as Partial<ItemObjectData | OpeningObjectData>
+        if (data.kind === 'item' || data.kind === 'opening') break
         object = object.parent
       }
-      if (object) return (object.userData as ItemObjectData).id
+      // The doors and windows of a lowered wall are hidden, and so cannot be picked.
+      if (!object || hidden) continue
+      const { kind, id } = object.userData as ItemObjectData | OpeningObjectData
+      return { kind, id }
     }
     return null
+  }
+
+  /** How far along a wall the pointer's ray meets it, from the wall's start corner. */
+  private wallOffsetUnder(event: PointerEvent, wallId: string): number | null {
+    const wall = this.floorplan.getWall(wallId)
+    const start = wall && this.floorplan.getCorner(wall.start)
+    const end = wall && this.floorplan.getCorner(wall.end)
+    if (!start || !end) return null
+    this.aimRay(event)
+    return wallOffsetFromRay(this.raycaster.ray.origin, this.raycaster.ray.direction, start, end)
   }
 
   /** Where the pointer's ray meets the floor, on the plan. */

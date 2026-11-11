@@ -8,11 +8,20 @@ export type {
 } from './item-scene.js'
 export { ModelLibrary, createGltfLoader } from './model-library.js'
 export type { ModelLoader } from './model-library.js'
-export { floorPointFromRay } from './item-dragging.js'
+export { floorPointFromRay, wallOffsetFromRay } from './item-dragging.js'
+export { DOOR_OPEN_ANGLE, FRAME_THICKNESS, buildOpeningObject } from './opening-geometry.js'
+export type { OpeningMaterials, OpeningPartData } from './opening-geometry.js'
 export type { CameraMode, View3DEvents, View3DOptions, View3DTheme } from './view3d.js'
 export { PlanScene } from './plan-scene.js'
-export type { FloorMeshData, PlanSceneColors, PlanSceneEvents, WallMeshData } from './plan-scene.js'
-export { WALL_FACE, buildWallGeometry } from './wall-geometry.js'
+export type {
+  FloorMeshData,
+  OpeningObjectData,
+  PlanSceneColors,
+  PlanSceneEvents,
+  WallMeshData,
+} from './plan-scene.js'
+export { WALL_FACE, buildWallGeometry, faceRectangles } from './wall-geometry.js'
+export type { FaceRectangle, WallCut, WallHole } from './wall-geometry.js'
 export { buildFloorGeometry } from './floor-geometry.js'
 export { toPlan, toScene } from './coordinates.js'
 export type { ScenePosition } from './coordinates.js'
