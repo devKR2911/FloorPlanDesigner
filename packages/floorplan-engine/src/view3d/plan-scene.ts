@@ -56,7 +56,9 @@ export class PlanScene {
     this.wallMaterial = new MeshStandardMaterial({ color: colors.wall, roughness: 0.9 })
     this.floorMaterial = new MeshStandardMaterial({ color: colors.floor, roughness: 0.95 })
     this.group.add(this.floorGroup, this.wallGroup)
-    this.stopWatching = floorplan.on('change', () => {
+    this.stopWatching = floorplan.on('change', ({ kind }) => {
+      // Items have their own scene; walls and floors stay as they are.
+      if (kind === 'items') return
       this.outOfDate = true
       if (this.active) this.rebuild()
     })

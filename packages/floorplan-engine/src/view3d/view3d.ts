@@ -6,14 +6,19 @@ import {
   GridHelper,
   PerspectiveCamera,
   Quaternion,
+  Raycaster,
   Scene,
+  Vector2,
   Vector3,
   WebGLRenderer,
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Emitter, type Listener } from '../core/events.js'
+import { SelectionStore } from '../core/selection.js'
 import type { Floorplan } from '../model/floorplan.js'
-import { boundingBox } from '../model/geometry.js'
+import { boundingBox, type Point } from '../model/geometry.js'
+import { ItemCatalog } from '../model/item-catalog.js'
+import { defaultPlacementSettings, placeItem, type PlacementSettings } from '../model/placement.js'
 import { toPlan, toScene } from './coordinates.js'
 import {
   defaultWalkSettings,
@@ -25,6 +30,9 @@ import {
   type WalkSettings,
   type WalkState,
 } from './first-person.js'
+import { floorPointFromRay } from './item-dragging.js'
+import { ItemScene, type ItemLoadError, type ItemObjectData } from './item-scene.js'
+import { ModelLibrary, createGltfLoader, type ModelLoader } from './model-library.js'
 import { PlanScene, type WallMeshData } from './plan-scene.js'
 import { easeInOut, type Tween } from './tween.js'
 import { wallsFacingCamera } from './wall-cutaway.js'
@@ -39,6 +47,11 @@ export interface View3DTheme {
   floor: string
   gridMajor: string
   gridMinor: string
+  /** Items whose model is loading or missing. */
+  itemPlaceholder: string
+  itemSelected: string
+  /** Outline of items that overlap a wall or another item. */
+  itemOverlap: string
 }
 
 export const defaultView3DTheme: View3DTheme = {
@@ -47,6 +60,9 @@ export const defaultView3DTheme: View3DTheme = {
   floor: '#cfc6b8',
   gridMajor: '#71717a',
   gridMinor: '#d4d4d8',
+  itemPlaceholder: '#c4c4c8',
+  itemSelected: '#1d4ed8',
+  itemOverlap: '#dc2626',
 }
 
 export interface View3DOptions {
@@ -55,11 +71,26 @@ export interface View3DOptions {
   floorplan: Floorplan
   theme?: Partial<View3DTheme>
   walk?: Partial<WalkSettings>
+  /** Item sizes and model URLs. */
+  catalog?: ItemCatalog
+  /** The selection to share with other views. */
+  selection?: SelectionStore
+  /** Wall and grid snapping for items. */
+  placement?: PlacementSettings
+  /** Where the Draco decoder files are served, for compressed models. */
+  dracoPath?: string
+  /** Replaces the GLB loader, for tests. */
+  loadModel?: ModelLoader
 }
 
 export type View3DEvents = {
   cameraMode: CameraMode
+  /** An item's model could not be loaded. It is shown as a box instead. */
+  itemError: ItemLoadError
 }
+
+/** How far, in pixels, the pointer may travel for a press to still count as a click. */
+const CLICK_SLOP = 3
 
 /** Height of a wall that is lowered because it stands between the camera and a room, in metres. */
 export const LOWERED_WALL_HEIGHT = 0.1
@@ -85,12 +116,19 @@ export class View3D {
   readonly camera = new PerspectiveCamera(ORBIT_FOV, 1, 0.05, 500)
   readonly theme: View3DTheme
   readonly walkSettings: WalkSettings
+  readonly catalog: ItemCatalog
+  readonly selection: SelectionStore
+  readonly placement: PlacementSettings
 
   private readonly host: HTMLElement
   private readonly floorplan: Floorplan
   private readonly renderer: WebGLRenderer
   private readonly controls: OrbitControls
   private readonly planScene: PlanScene
+  private readonly itemScene: ItemScene
+  private readonly library: ModelLibrary
+  private readonly disposeLoader: () => void
+  private readonly raycaster = new Raycaster()
   private readonly resizeObserver: ResizeObserver
   private readonly emitter = new Emitter<View3DEvents>()
   private readonly cleanups: (() => void)[] = []
@@ -102,6 +140,10 @@ export class View3D {
   private orbitBeforeWalk: { position: Vector3; target: Vector3 } | null = null
   private readonly heldKeys = new Set<string>()
   private lookDrag: { pointerId: number; x: number; y: number } | null = null
+  /** An item being dragged across the floor in orbit mode. */
+  private itemDrag: { pointerId: number; id: string; offset: Point; rotation: number } | null = null
+  /** A press on empty space, which clears the selection if it ends without moving. */
+  private press: { pointerId: number; x: number; y: number } | null = null
 
   private tween: Tween | null = null
   private frame: number | null = null
@@ -116,6 +158,9 @@ export class View3D {
     this.floorplan = options.floorplan
     this.theme = { ...defaultView3DTheme, ...options.theme }
     this.walkSettings = { ...defaultWalkSettings, ...options.walk }
+    this.catalog = options.catalog ?? new ItemCatalog()
+    this.selection = options.selection ?? new SelectionStore()
+    this.placement = options.placement ?? { ...defaultPlacementSettings }
 
     this.renderer = new WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -144,6 +189,22 @@ export class View3D {
     this.planScene = new PlanScene(this.floorplan, this.theme)
     this.scene.add(this.planScene.group)
 
+    if (options.loadModel) {
+      this.library = new ModelLibrary(options.loadModel)
+      this.disposeLoader = () => {}
+    } else {
+      const loader = createGltfLoader(options.dracoPath)
+      this.library = new ModelLibrary(loader.load)
+      this.disposeLoader = loader.dispose
+    }
+    this.itemScene = new ItemScene(this.floorplan, this.catalog, this.library, {
+      placeholder: this.theme.itemPlaceholder,
+      selected: this.theme.itemSelected,
+      overlap: this.theme.itemOverlap,
+    })
+    this.itemScene.setSelection(this.selection.current)
+    this.scene.add(this.itemScene.group)
+
     this.camera.position.copy(DEFAULT_CAMERA_POSITION)
     this.controls = new OrbitControls(this.camera, this.canvas)
     this.controls.target.set(0, 0, 0)
@@ -159,11 +220,22 @@ export class View3D {
         this.updateGrid()
         this.invalidate()
       }),
+      this.itemScene.on('update', this.invalidate),
+      this.itemScene.on('error', (error) => this.emitter.emit('itemError', error)),
+      this.selection.on('change', (selection) => {
+        this.itemScene.setSelection(selection)
+        this.invalidate()
+      }),
       this.floorplan.on('change', ({ kind }) => {
         if (kind !== 'load') return
         if (this.visible && this.mode === 'orbit') this.fit({ animate: false })
         else this.fitPending = true
       }),
+    )
+    // In the capture phase, so a press on an item is seen before the orbit controls start orbiting.
+    this.canvas.addEventListener('pointerdown', this.onPointerDownFirst, { capture: true })
+    this.cleanups.push(() =>
+      this.canvas.removeEventListener('pointerdown', this.onPointerDownFirst, { capture: true }),
     )
     this.listen('pointerdown', this.onPointerDown)
     this.listen('pointermove', this.onPointerMove)
@@ -182,6 +254,27 @@ export class View3D {
     return this.mode
   }
 
+  /** Whether the view is shown, which a host of zero size is not. */
+  get isVisible(): boolean {
+    return this.visible
+  }
+
+  /** The point on the plan the orbit camera looks at, or where the walker stands. */
+  get focusPoint(): Point {
+    if (this.mode === 'walk') return { x: this.walk.x, y: this.walk.y }
+    return toPlan(this.controls.target)
+  }
+
+  /** How many different model files have been asked for so far. */
+  get loadedModelCount(): number {
+    return this.library.size
+  }
+
+  /** Whether an item's model is showing, rather than a stand-in box. */
+  hasItemModel(id: string): boolean {
+    return this.itemScene.hasModel(id)
+  }
+
   /** Switches between orbiting the plan and walking through it. The camera glides across. */
   setCameraMode(mode: CameraMode): void {
     if (this.disposed || mode === this.mode) return
@@ -189,6 +282,8 @@ export class View3D {
     this.mode = mode
     this.heldKeys.clear()
     this.lookDrag = null
+    this.itemDrag = null
+    this.press = null
     if (mode === 'walk') this.enterWalk()
     else this.leaveWalk()
     this.canvas.style.cursor = mode === 'walk' ? 'grab' : ''
@@ -239,6 +334,9 @@ export class View3D {
     this.controls.removeEventListener('change', this.invalidate)
     this.controls.dispose()
     this.planScene.dispose()
+    this.itemScene.dispose()
+    this.library.dispose()
+    this.disposeLoader()
     this.grid.dispose()
     this.renderer.dispose()
     this.renderer.forceContextLoss()
@@ -458,6 +556,29 @@ export class View3D {
     this.cleanups.push(() => this.canvas.removeEventListener(name, handler))
   }
 
+  /** Runs before the orbit controls. A press on an item starts dragging it instead of orbiting. */
+  private readonly onPointerDownFirst = (event: PointerEvent): void => {
+    if (this.mode !== 'orbit' || event.button !== 0 || this.tween) return
+    const id = this.itemUnder(event)
+    if (!id) {
+      this.press = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+      return
+    }
+    const item = this.floorplan.getItem(id)
+    const floor = this.floorPointUnder(event)
+    if (!item || !floor) return
+    this.controls.enabled = false
+    this.canvas.setPointerCapture(event.pointerId)
+    this.selection.set({ kind: 'item', id })
+    this.itemDrag = {
+      pointerId: event.pointerId,
+      id,
+      offset: { x: item.position.x - floor.x, y: item.position.y - floor.y },
+      rotation: item.rotation,
+    }
+    this.canvas.style.cursor = 'grabbing'
+  }
+
   private readonly onPointerDown = (event: PointerEvent): void => {
     this.canvas.focus({ preventScroll: true })
     if (this.mode !== 'walk') return
@@ -467,6 +588,10 @@ export class View3D {
   }
 
   private readonly onPointerMove = (event: PointerEvent): void => {
+    if (this.mode === 'orbit') {
+      this.onOrbitPointerMove(event)
+      return
+    }
     const drag = this.lookDrag
     if (!drag || drag.pointerId !== event.pointerId || this.mode !== 'walk') return
     this.walk = lookBy(this.walk, event.clientX - drag.x, event.clientY - drag.y, this.walkSettings)
@@ -479,7 +604,50 @@ export class View3D {
     }
   }
 
+  private onOrbitPointerMove(event: PointerEvent): void {
+    const drag = this.itemDrag
+    if (drag?.pointerId === event.pointerId) {
+      const item = this.floorplan.getItem(drag.id)
+      const floor = this.floorPointUnder(event)
+      if (!item || !floor) return
+      const placed = placeItem(
+        {
+          position: { x: floor.x + drag.offset.x, y: floor.y + drag.offset.y },
+          rotation: drag.rotation,
+        },
+        this.catalog.sizeOf(item.catalogKey),
+        this.floorplan,
+        event.altKey ? { ...this.placement, enabled: false } : this.placement,
+      )
+      this.floorplan.updateItem(drag.id, { position: placed.position, rotation: placed.rotation })
+      return
+    }
+    const press = this.press
+    if (press?.pointerId === event.pointerId) {
+      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > CLICK_SLOP)
+        this.press = null
+      return
+    }
+    // Hovering, with no button held.
+    if (event.buttons === 0) this.canvas.style.cursor = this.itemUnder(event) ? 'grab' : ''
+  }
+
   private readonly onPointerEnd = (event: PointerEvent): void => {
+    if (this.itemDrag?.pointerId === event.pointerId) {
+      this.itemDrag = null
+      this.controls.enabled = true
+      if (this.canvas.hasPointerCapture(event.pointerId)) {
+        this.canvas.releasePointerCapture(event.pointerId)
+      }
+      this.canvas.style.cursor = 'grab'
+      return
+    }
+    if (this.press?.pointerId === event.pointerId) {
+      // A click on empty space, walls or floors clears the selection.
+      this.press = null
+      if (event.type === 'pointerup') this.selection.set(null)
+      return
+    }
     if (this.lookDrag?.pointerId !== event.pointerId) return
     this.lookDrag = null
     if (this.canvas.hasPointerCapture(event.pointerId)) {
@@ -489,7 +657,10 @@ export class View3D {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (this.mode !== 'walk') return
+    if (this.mode === 'orbit') {
+      this.onOrbitKeyDown(event)
+      return
+    }
     if (event.key === 'Escape') {
       event.preventDefault()
       this.setCameraMode('orbit')
@@ -499,6 +670,59 @@ export class View3D {
     event.preventDefault()
     this.heldKeys.add(event.code)
     this.invalidate()
+  }
+
+  /** `R` turns the selected item a quarter, `Delete` removes it, `Escape` clears the selection. */
+  private onOrbitKeyDown(event: KeyboardEvent): void {
+    const selected = this.selection.current
+    if (selected?.kind !== 'item') return
+    const item = this.floorplan.getItem(selected.id)
+    if (!item) return
+    switch (event.key) {
+      case 'r':
+      case 'R':
+        this.floorplan.updateItem(item.id, { rotation: item.rotation + Math.PI / 2 })
+        break
+      case 'Delete':
+      case 'Backspace':
+        this.selection.set(null)
+        this.floorplan.removeItem(item.id)
+        break
+      case 'Escape':
+        this.selection.set(null)
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+  }
+
+  /** The id of the item under the pointer, if any. */
+  private itemUnder(event: PointerEvent): string | null {
+    this.aimRay(event)
+    for (const hit of this.raycaster.intersectObjects(this.itemScene.group.children, true)) {
+      let object: typeof hit.object | null = hit.object
+      while (object && (object.userData as Partial<ItemObjectData>).kind !== 'item') {
+        object = object.parent
+      }
+      if (object) return (object.userData as ItemObjectData).id
+    }
+    return null
+  }
+
+  /** Where the pointer's ray meets the floor, on the plan. */
+  private floorPointUnder(event: PointerEvent): Point | null {
+    this.aimRay(event)
+    return floorPointFromRay(this.raycaster.ray.origin, this.raycaster.ray.direction)
+  }
+
+  private aimRay(event: PointerEvent): void {
+    const rect = this.canvas.getBoundingClientRect()
+    const pointer = new Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    )
+    this.raycaster.setFromCamera(pointer, this.camera)
   }
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
@@ -515,6 +739,7 @@ export class View3D {
     const { clientWidth: width, clientHeight: height } = this.host
     this.visible = width > 0 && height > 0
     this.planScene.setActive(this.visible)
+    this.itemScene.setActive(this.visible)
     if (!this.visible) return
     this.renderer.setSize(width, height, false)
     this.camera.aspect = width / height
