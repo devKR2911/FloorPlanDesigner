@@ -1,6 +1,5 @@
 import {
   FloorplanError,
-  createEmptyPlan,
   type CameraMode,
   type EditorMode,
   type Floorplan,
@@ -16,29 +15,44 @@ import {
   MousePointer2,
   Pencil,
   Rotate3d,
-  Save,
   Square,
   Trash2,
   X,
 } from 'lucide-react'
-import { useEffect, useReducer, useState, type FormEvent } from 'react'
+import { useBlocker } from '@tanstack/react-router'
+import { useCallback, useEffect, useReducer, useState } from 'react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { catalog, catalogItem } from '@/features/catalog/catalog'
 import { CatalogPanel } from '@/features/catalog/CatalogPanel'
 import type { OpeningPreset } from '@/features/catalog/openings'
-import { usePlans, useSavePlan } from '@/features/plans/queries'
-import { writePlanIdToUrl } from '@/lib/plan-url'
+import { useRenamePlan, useSavePlan } from '@/features/plans/queries'
+import { ApiError, describeError } from '@/lib/api-client'
+import { EditorHeader, type SaveStatus } from './EditorHeader'
 import { EngineCanvas, type EditorView } from './EngineCanvas'
 import { ItemInspector } from './ItemInspector'
 import { OpeningInspector } from './OpeningInspector'
+import { useUnsavedChanges } from './use-unsaved-changes'
 import { WallInspector } from './WallInspector'
 
 interface EditorProps {
-  /** The saved plan to open, or `null` to start a new one. */
-  initialPlan: PlanRecord | null
+  /** The saved plan to edit. */
+  plan: PlanRecord
 }
+
+/** The size of the picture of the plan that is saved for the plan list, in CSS pixels. */
+const THUMBNAIL_SIZE = { width: 320, height: 200 }
 
 const MODES: { value: EditorMode; label: string; icon: typeof MousePointer2 }[] = [
   { value: 'move', label: 'Move and select', icon: MousePointer2 },
@@ -61,7 +75,7 @@ const CAMERA_MODES: { value: CameraMode; label: string; icon: typeof Rotate3d; h
   },
 ]
 
-export function Editor({ initialPlan }: EditorProps) {
+export function Editor({ plan }: EditorProps) {
   const [engine, setEngine] = useState<FloorplanEngine | null>(null)
   const [view, setView] = useState<EditorView>('2d')
   const [mode, setMode] = useState<EditorMode>('move')
@@ -69,14 +83,13 @@ export function Editor({ initialPlan }: EditorProps) {
   const [selection, setSelection] = useState<Selection>(null)
   const [catalogOpen, setCatalogOpen] = useState(true)
   const [notice, setNotice] = useState<string | null>(null)
-  const [planId, setPlanId] = useState(initialPlan?.id ?? null)
-  const [name, setName] = useState(initialPlan?.name ?? 'Untitled plan')
   // Kept from the first render: later saves must not reload the plan over the working copy.
-  const [initialDocument] = useState(() => initialPlan?.document ?? createEmptyPlan())
+  const [initialDocument] = useState(plan.document)
   // Bumped on every model change so the inspector shows current values.
   const [, bump] = useReducer((n: number) => n + 1, 0)
-  const plans = usePlans()
   const save = useSavePlan()
+  const rename = useRenamePlan()
+  const changes = useUnsavedChanges(engine)
 
   // Before the plan is loaded, so its items are drawn at their sizes from the start.
   useEffect(() => engine?.setCatalog(catalog.items), [engine])
@@ -105,31 +118,60 @@ export function Editor({ initialPlan }: EditorProps) {
   // A new 3D view starts in orbit mode, matching the initial state here.
   useEffect(() => engine?.view3d.on('cameraMode', setCameraMode), [engine])
 
-  const canSave = engine !== null && name.trim() !== '' && !save.isPending
+  const { dirty, begin, markSaved } = changes
+  const { mutateAsync: saveAsync, isPending: saving } = save
+  const canSave = engine !== null && dirty && !saving
 
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-    if (!engine || !canSave) return
-    save.mutate(
-      { id: planId, name, document: engine.export() },
-      {
-        onSuccess: (record) => {
-          setName(record.name)
-          if (planId === null) {
-            setPlanId(record.id)
-            writePlanIdToUrl(record.id)
-          }
-        },
-      },
-    )
-  }
+  /** Saves the drawing and its picture. Resolves to whether it worked. */
+  const saveNow = useCallback(async (): Promise<boolean> => {
+    if (!engine) return false
+    const revision = begin()
+    try {
+      await saveAsync({
+        id: plan.id,
+        document: engine.export(),
+        thumbnail: engine.editor?.snapshot(THUMBNAIL_SIZE) ?? null,
+      })
+      markSaved(revision)
+      return true
+    } catch {
+      // The header shows what went wrong, from the mutation's own state.
+      return false
+    }
+  }, [engine, plan.id, begin, markSaved, saveAsync])
 
-  let status: string
-  if (save.isPending) status = 'Saving…'
-  else if (save.isError) status = `Could not save: ${save.error.message}`
-  else if (save.isSuccess) status = `Saved at ${formatTime(save.data.updatedAt)}`
-  else if (initialPlan) status = `Loaded, last saved at ${formatTime(initialPlan.updatedAt)}`
-  else status = 'Not saved yet'
+  // Ctrl+S, or Cmd+S on a Mac, saves from anywhere on the screen.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== 's' || !(event.ctrlKey || event.metaKey)) return
+      event.preventDefault()
+      if (canSave) void saveNow()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [canSave, saveNow])
+
+  useEffect(() => {
+    document.title = `${plan.name} – Floor Plan Designer`
+  }, [plan.name])
+
+  // Leaving with unsaved changes asks first. Closing the tab gets the browser's own prompt.
+  const leaving = useBlocker({
+    shouldBlockFn: () => dirty,
+    enableBeforeUnload: () => dirty,
+    withResolver: true,
+  })
+
+  let status: SaveStatus
+  if (saving) status = { kind: 'saving' }
+  else if (save.isError) {
+    status = {
+      kind: 'error',
+      message: `Could not save: ${describeError(save.error)}`,
+      missing: save.error instanceof ApiError && save.error.status === 404,
+    }
+  } else if (dirty) status = { kind: 'unsaved' }
+  else status = { kind: 'saved', at: plan.updatedAt }
 
   const selectedWall =
     selection?.kind === 'wall' ? (engine?.floorplan.getWall(selection.id) ?? null) : null
@@ -180,33 +222,14 @@ export function Editor({ initialPlan }: EditorProps) {
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
-        <span className="text-sm font-semibold">Floor Plan Designer</span>
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          <input
-            aria-label="Plan name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={200}
-            className="h-8 w-48 rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          />
-          <Button type="submit" disabled={!canSave}>
-            <Save data-icon="inline-start" />
-            Save
-          </Button>
-        </form>
-        <span
-          role={save.isError ? 'alert' : 'status'}
-          className={save.isError ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}
-        >
-          {status}
-        </span>
-        {plans.data && (
-          <span className="ml-auto text-sm text-muted-foreground">
-            {plans.data.length === 1 ? '1 saved plan' : `${plans.data.length} saved plans`}
-          </span>
-        )}
-      </header>
+      <EditorHeader
+        name={plan.name}
+        onRename={(name) => rename.mutate({ id: plan.id, name })}
+        renameError={rename.isError ? `Could not rename: ${describeError(rename.error)}` : null}
+        status={status}
+        canSave={canSave}
+        onSave={() => void saveNow()}
+      />
 
       <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
         <Tooltip>
@@ -356,6 +379,35 @@ export function Editor({ initialPlan }: EditorProps) {
           <EngineCanvas view={view} onEngineChange={setEngine} className="absolute inset-0" />
         </div>
       </main>
+
+      <AlertDialog open={leaving.status === 'blocked'}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save your changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{plan.name}” has changes that are not saved. If you leave without saving, they are
+              lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => leaving.reset?.()}>Stay</AlertDialogCancel>
+            <Button variant="outline" onClick={() => leaving.proceed?.()}>
+              Leave without saving
+            </Button>
+            <AlertDialogAction
+              disabled={saving}
+              onClick={async (event) => {
+                // Keep the dialog open until the save has finished.
+                event.preventDefault()
+                if (await saveNow()) leaving.proceed?.()
+                else leaving.reset?.()
+              }}
+            >
+              Save and leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -377,8 +429,4 @@ function FitButton({ onClick, disabled }: { onClick: () => void; disabled?: bool
       <TooltipContent>Fit plan to view</TooltipContent>
     </Tooltip>
   )
-}
-
-function formatTime(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString()
 }

@@ -30,3 +30,12 @@ export async function toApiError(response: Response): Promise<ApiError> {
   }
   return new ApiError(response.status, message)
 }
+
+/**
+ * What went wrong, in words fit to show. The backend's own message is used when it answered;
+ * anything else means the request never got an answer.
+ */
+export function describeError(error: unknown): string {
+  if (error instanceof ApiError) return error.message
+  return 'The server could not be reached. Check that it is running, then try again.'
+}
