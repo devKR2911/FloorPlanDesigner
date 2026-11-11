@@ -1,13 +1,28 @@
 import { Emitter, type Listener } from '../core/events.js'
+import { SelectionStore, sameSelection, type Selection } from '../core/selection.js'
 import { Floorplan, FloorplanError } from '../model/floorplan.js'
 import { distance, type Point } from '../model/geometry.js'
-import { hitTest, type Hit } from './hit-testing.js'
+import { ItemCatalog } from '../model/item-catalog.js'
+import { defaultPlacementSettings, placeItem, type PlacementSettings } from '../model/placement.js'
+import { hitTest, rotateHandlePosition, type Hit } from './hit-testing.js'
 import { snapPoint, toGrid, type SnapSettings, type SnapTarget } from './snapping.js'
 import type { Viewport } from './viewport.js'
 
 export type EditorMode = 'move' | 'draw' | 'delete'
 
-export type Selection = { kind: 'corner' | 'wall'; id: string } | null
+export type { Selection }
+
+export interface InteractionOptions {
+  /** Item sizes. Without it, items cannot be picked or moved. */
+  catalog?: ItemCatalog
+  /** The selection to share with other views. A new one is made if not given. */
+  selection?: SelectionStore
+  /** Wall and grid snapping for items. */
+  placement?: PlacementSettings
+}
+
+/** Rotation by hand moves in steps of this many radians, unless `Alt` is held. */
+export const ROTATION_STEP = Math.PI / 12
 
 /** A pointer event in both coordinate systems, as the canvas layer reports it. */
 export interface PointerInput {
@@ -43,7 +58,7 @@ const CLICK_SLOP = 3
 
 type Gesture =
   | { type: 'idle' }
-  | { type: 'pending'; start: PointerInput; hit: Hit }
+  | { type: 'pending'; start: PointerInput; hit: Hit; handle: boolean }
   | { type: 'pan'; last: Point }
   | { type: 'dragCorner'; id: string }
   | {
@@ -53,6 +68,8 @@ type Gesture =
       grabWorld: Point
       grabCorner: Point
     }
+  | { type: 'dragItem'; id: string; offset: Point; rotation: number }
+  | { type: 'rotateItem'; id: string }
 
 /**
  * The editor's input logic: modes, selection, drawing and dragging. It takes pointer input in
@@ -62,19 +79,41 @@ export class Interaction {
   readonly floorplan: Floorplan
   readonly viewport: Viewport
   readonly snapping: SnapSettings
+  readonly catalog: ItemCatalog
+  readonly placement: PlacementSettings
 
+  private readonly selectionStore: SelectionStore
+  private readonly stopWatchingSelection: () => void
   private currentMode: EditorMode = 'move'
-  private currentSelection: Selection = null
   private currentHover: Hit = null
+  private handleHover = false
   private gesture: Gesture = { type: 'idle' }
   private chain: { start: string; last: string; walls: number } | null = null
   private pointer: PointerInput | null = null
   private readonly emitter = new Emitter<InteractionEvents>()
 
-  constructor(floorplan: Floorplan, viewport: Viewport, snapping: SnapSettings) {
+  constructor(
+    floorplan: Floorplan,
+    viewport: Viewport,
+    snapping: SnapSettings,
+    options: InteractionOptions = {},
+  ) {
     this.floorplan = floorplan
     this.viewport = viewport
     this.snapping = snapping
+    this.catalog = options.catalog ?? new ItemCatalog()
+    this.placement = options.placement ?? { ...defaultPlacementSettings }
+    this.selectionStore = options.selection ?? new SelectionStore()
+    this.stopWatchingSelection = this.selectionStore.on('change', (selection) => {
+      this.emitter.emit('selection', selection)
+      this.invalidate()
+    })
+  }
+
+  /** Stops following the shared selection. */
+  dispose(): void {
+    this.stopWatchingSelection()
+    this.emitter.clear()
   }
 
   get mode(): EditorMode {
@@ -92,11 +131,16 @@ export class Interaction {
   }
 
   get selection(): Selection {
-    return this.currentSelection
+    return this.selectionStore.current
   }
 
   get hover(): Hit {
     return this.currentHover
+  }
+
+  /** True while the pointer is over the selected item's rotate handle. */
+  get overRotateHandle(): boolean {
+    return this.handleHover
   }
 
   /** True while a chain of walls is being drawn. */
@@ -126,8 +170,9 @@ export class Interaction {
       return
     }
     if (input.button !== undefined && input.button !== 0) return
-    const hit = this.currentMode === 'draw' ? null : this.hitAt(input.world)
-    this.gesture = { type: 'pending', start: input, hit }
+    const handle = this.currentMode === 'move' && this.isOnRotateHandle(input.world)
+    const hit = this.currentMode === 'draw' || handle ? null : this.hitAt(input.world)
+    this.gesture = { type: 'pending', start: input, hit, handle }
   }
 
   pointerMove(input: PointerInput): void {
@@ -173,6 +218,36 @@ export class Interaction {
       return
     }
 
+    if (gesture.type === 'dragItem') {
+      const item = this.floorplan.getItem(gesture.id)
+      if (!item) return
+      const placed = placeItem(
+        {
+          position: { x: input.world.x + gesture.offset.x, y: input.world.y + gesture.offset.y },
+          rotation: gesture.rotation,
+        },
+        this.catalog.sizeOf(item.catalogKey),
+        this.floorplan,
+        input.altKey ? { ...this.placement, enabled: false } : this.placement,
+      )
+      this.floorplan.updateItem(gesture.id, {
+        position: placed.position,
+        rotation: placed.rotation,
+      })
+      return
+    }
+
+    if (gesture.type === 'rotateItem') {
+      const item = this.floorplan.getItem(gesture.id)
+      if (!item) return
+      // The handle is in front of the item, so the item's rotation is a quarter turn on from it.
+      const angle =
+        Math.atan2(input.world.y - item.position.y, input.world.x - item.position.x) + Math.PI / 2
+      const rotation = input.altKey ? angle : Math.round(angle / ROTATION_STEP) * ROTATION_STEP
+      this.floorplan.updateItem(gesture.id, { rotation })
+      return
+    }
+
     this.updateHover(input)
     if (this.currentMode === 'draw') this.invalidate()
   }
@@ -193,6 +268,7 @@ export class Interaction {
       }
       this.select(this.floorplan.getWall(gesture.id) ? { kind: 'wall', id: gesture.id } : null)
     }
+    // An item drag or turn has nothing left to apply: every move already went to the model.
     this.updateHover(input)
     this.invalidate()
   }
@@ -229,13 +305,16 @@ export class Interaction {
       case 'Escape':
         if (this.chain) this.endChain()
         else if (this.currentMode !== 'move') this.mode = 'move'
-        else if (this.currentSelection) this.select(null)
+        else if (this.selectionStore.current) this.select(null)
         else return false
         this.invalidate()
         return true
       case 'Delete':
       case 'Backspace':
         return this.deleteSelection()
+      case 'r':
+      case 'R':
+        return this.turnSelectedItem(Math.PI / 2)
       default:
         return false
     }
@@ -249,12 +328,27 @@ export class Interaction {
   }
 
   deleteSelection(): boolean {
-    const selection = this.currentSelection
+    const selection = this.selectionStore.current
     if (!selection) return false
     this.select(null)
-    if (selection.kind === 'corner') this.floorplan.removeCorner(selection.id)
-    else this.floorplan.removeWall(selection.id)
+    this.remove(selection)
     return true
+  }
+
+  /** Turns the selected item counter-clockwise by `angle` radians. Returns whether one was selected. */
+  turnSelectedItem(angle: number): boolean {
+    const selection = this.selectionStore.current
+    if (selection?.kind !== 'item') return false
+    const item = this.floorplan.getItem(selection.id)
+    if (!item) return false
+    this.floorplan.updateItem(item.id, { rotation: item.rotation + angle })
+    return true
+  }
+
+  private remove(target: NonNullable<Hit>): void {
+    if (target.kind === 'corner') this.floorplan.removeCorner(target.id)
+    else if (target.kind === 'wall') this.floorplan.removeWall(target.id)
+    else this.floorplan.removeItem(target.id)
   }
 
   private click(input: PointerInput, hit: Hit): void {
@@ -266,8 +360,10 @@ export class Interaction {
         this.placeCorner(input)
         break
       case 'delete':
-        if (hit?.kind === 'corner') this.floorplan.removeCorner(hit.id)
-        else if (hit?.kind === 'wall') this.floorplan.removeWall(hit.id)
+        if (hit) {
+          if (sameSelection(hit, this.selectionStore.current)) this.select(null)
+          this.remove(hit)
+        }
         this.setHover(null)
         break
     }
@@ -298,6 +394,22 @@ export class Interaction {
 
   private beginDrag(pending: Extract<Gesture, { type: 'pending' }>): void {
     const { hit, start } = pending
+    const selection = this.selectionStore.current
+    if (pending.handle && selection?.kind === 'item') {
+      this.gesture = { type: 'rotateItem', id: selection.id }
+      return
+    }
+    if (this.currentMode === 'move' && hit?.kind === 'item') {
+      const item = this.floorplan.getItem(hit.id)!
+      this.gesture = {
+        type: 'dragItem',
+        id: hit.id,
+        offset: { x: item.position.x - start.world.x, y: item.position.y - start.world.y },
+        rotation: item.rotation,
+      }
+      this.select(hit)
+      return
+    }
     if (this.currentMode === 'move' && hit?.kind === 'corner') {
       this.gesture = { type: 'dragCorner', id: hit.id }
       this.select(hit)
@@ -336,11 +448,28 @@ export class Interaction {
       world,
       this.floorplan,
       this.snapping.cornerTolerance * this.viewport.metresPerPixel,
+      this.catalog.sizeOf,
     )
   }
 
+  /** Whether a world point is on the selected item's rotate handle. */
+  private isOnRotateHandle(world: Point): boolean {
+    const selection = this.selectionStore.current
+    if (selection?.kind !== 'item') return false
+    const item = this.floorplan.getItem(selection.id)
+    if (!item) return false
+    const { metresPerPixel } = this.viewport
+    const handle = rotateHandlePosition(item, this.catalog.sizeOf(item.catalogKey), metresPerPixel)
+    return distance(world, handle) <= this.snapping.cornerTolerance * metresPerPixel
+  }
+
   private updateHover(input: PointerInput): void {
-    this.setHover(this.currentMode === 'draw' ? null : this.hitAt(input.world))
+    const handle = this.currentMode === 'move' && this.isOnRotateHandle(input.world)
+    if (handle !== this.handleHover) {
+      this.handleHover = handle
+      this.invalidate()
+    }
+    this.setHover(this.currentMode === 'draw' || handle ? null : this.hitAt(input.world))
   }
 
   private setHover(hit: Hit): void {
@@ -351,10 +480,8 @@ export class Interaction {
   }
 
   private select(selection: Selection): void {
-    if (sameHit(selection, this.currentSelection)) return
-    this.currentSelection = selection
-    this.emitter.emit('selection', selection)
-    this.invalidate()
+    // The store tells this class back through its change event, which emits and redraws.
+    this.selectionStore.set(selection)
   }
 
   private invalidate(): void {
@@ -362,7 +489,6 @@ export class Interaction {
   }
 }
 
-function sameHit(a: Hit | Selection, b: Hit | Selection): boolean {
-  if (a === null || b === null) return a === b
-  return a.kind === b.kind && a.id === b.id
+function sameHit(a: Hit, b: Hit): boolean {
+  return sameSelection(a, b)
 }

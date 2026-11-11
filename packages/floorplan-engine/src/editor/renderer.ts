@@ -1,5 +1,7 @@
 import type { Floorplan } from '../model/floorplan.js'
 import { distance, type Point } from '../model/geometry.js'
+import { itemOutline } from '../model/item-geometry.js'
+import type { ItemSize } from '../schema/item-definition.js'
 import type { Hit } from './hit-testing.js'
 import type { DrawPreview, Selection } from './interaction.js'
 import type { Viewport } from './viewport.js'
@@ -14,6 +16,12 @@ export interface EditorTheme {
   wall: string
   wallHover: string
   wallSelected: string
+  item: string
+  itemStroke: string
+  itemHover: string
+  itemSelected: string
+  /** Items that overlap a wall or another item. */
+  itemOverlap: string
   corner: string
   cornerStroke: string
   cornerHover: string
@@ -34,6 +42,11 @@ export const defaultTheme: EditorTheme = {
   wall: '#3f3f46',
   wallHover: '#2563eb',
   wallSelected: '#1d4ed8',
+  item: 'rgba(161, 161, 170, 0.35)',
+  itemStroke: '#52525b',
+  itemHover: 'rgba(37, 99, 235, 0.18)',
+  itemSelected: 'rgba(29, 78, 216, 0.25)',
+  itemOverlap: 'rgba(220, 38, 38, 0.3)',
   corner: '#ffffff',
   cornerStroke: '#3f3f46',
   cornerHover: '#2563eb',
@@ -51,6 +64,12 @@ export interface RenderState {
   selection: Selection
   preview: DrawPreview | null
   theme: EditorTheme
+  sizeOf: (catalogKey: string) => ItemSize
+  /** Ids of the items that overlap a wall or another item. */
+  overlaps: ReadonlySet<string>
+  /** Where the selected item's rotate handle is, in world coordinates, if an item is selected. */
+  rotateHandle: Point | null
+  rotateHandleHover: boolean
 }
 
 /** Scale above which the 0.1 m grid lines are drawn. */
@@ -77,6 +96,7 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
 
   drawGrid(ctx, state)
   drawRooms(ctx, state)
+  drawItems(ctx, state)
   drawWalls(ctx, state)
   drawDimensions(ctx, state)
   drawCorners(ctx, state)
@@ -128,6 +148,60 @@ function drawRooms(
     ctx.textBaseline = 'middle'
     ctx.fillText(formatArea(room.area), label.x, label.y)
   }
+}
+
+function drawItems(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const { floorplan, viewport, theme, hover, selection, overlaps, sizeOf } = state
+  for (const item of floorplan.items) {
+    const selected = selection?.kind === 'item' && selection.id === item.id
+    const hovered = hover?.kind === 'item' && hover.id === item.id
+    const outline = itemOutline(item, sizeOf(item.catalogKey)).map((p) => viewport.toScreen(p))
+    ctx.fillStyle = overlaps.has(item.id)
+      ? theme.itemOverlap
+      : selected
+        ? theme.itemSelected
+        : hovered
+          ? theme.itemHover
+          : theme.item
+    tracePolygon(ctx, outline)
+    ctx.fill()
+    ctx.strokeStyle = selected || hovered ? theme.wallSelected : theme.itemStroke
+    ctx.lineWidth = selected ? 1.5 : 1
+    ctx.stroke()
+    // A heavier line along the front, so it is clear which way the item faces.
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(outline[0]!.x, outline[0]!.y)
+    ctx.lineTo(outline[1]!.x, outline[1]!.y)
+    ctx.stroke()
+  }
+  drawRotateHandle(ctx, state)
+}
+
+function drawRotateHandle(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const { floorplan, viewport, theme, selection, rotateHandle, rotateHandleHover } = state
+  if (!rotateHandle || selection?.kind !== 'item') return
+  const item = floorplan.getItem(selection.id)
+  if (!item) return
+  const centre = viewport.toScreen(item.position)
+  const handle = viewport.toScreen(rotateHandle)
+  ctx.strokeStyle = theme.wallSelected
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(centre.x, centre.y)
+  ctx.lineTo(handle.x, handle.y)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.arc(
+    handle.x,
+    handle.y,
+    rotateHandleHover ? CORNER_RADIUS_ACTIVE : CORNER_RADIUS + 1,
+    0,
+    Math.PI * 2,
+  )
+  ctx.fillStyle = rotateHandleHover ? theme.wallSelected : theme.corner
+  ctx.fill()
+  ctx.stroke()
 }
 
 function drawWalls(ctx: CanvasRenderingContext2D, state: RenderState): void {

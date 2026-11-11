@@ -1,6 +1,8 @@
 export { FloorplanEngine } from './engine.js'
 export type { FloorplanEngineEvents, FloorplanEngineOptions } from './engine.js'
 export { Emitter } from './core/events.js'
+export { SelectionStore, sameSelection } from './core/selection.js'
+export type { Selection, SelectionEvents } from './core/selection.js'
 export type { Listener } from './core/events.js'
 export * from './model/index.js'
 export * from './editor/index.js'

@@ -1,7 +1,11 @@
 import { Emitter, type Listener } from '../core/events.js'
+import type { SelectionStore } from '../core/selection.js'
 import type { Floorplan } from '../model/floorplan.js'
 import { boundingBox } from '../model/geometry.js'
-import type { Hit } from './hit-testing.js'
+import { ItemCatalog } from '../model/item-catalog.js'
+import { findOverlaps } from '../model/item-geometry.js'
+import type { PlacementSettings } from '../model/placement.js'
+import { rotateHandlePosition, type Hit } from './hit-testing.js'
 import { Interaction, type EditorMode, type PointerInput, type Selection } from './interaction.js'
 import { defaultTheme, render, type EditorTheme } from './renderer.js'
 import { defaultSnapSettings, type SnapSettings } from './snapping.js'
@@ -13,6 +17,12 @@ export interface PlanEditorOptions {
   floorplan: Floorplan
   snapping?: Partial<SnapSettings>
   theme?: Partial<EditorTheme>
+  /** Item sizes. Without it, items are drawn and picked at a fallback size. */
+  catalog?: ItemCatalog
+  /** The selection to share with other views. */
+  selection?: SelectionStore
+  /** Wall and grid snapping for items. */
+  placement?: PlacementSettings
 }
 
 export type PlanEditorEvents = {
@@ -32,6 +42,7 @@ export class PlanEditor {
 
   private readonly host: HTMLElement
   private readonly floorplan: Floorplan
+  private readonly catalog: ItemCatalog
   private readonly interaction: Interaction
   private readonly context: CanvasRenderingContext2D
   private readonly resizeObserver: ResizeObserver
@@ -59,10 +70,16 @@ export class PlanEditor {
     this.context = context
 
     this.viewport = new Viewport(this.host.clientWidth, this.host.clientHeight)
-    this.interaction = new Interaction(this.floorplan, this.viewport, this.snapping)
+    this.catalog = options.catalog ?? new ItemCatalog()
+    this.interaction = new Interaction(this.floorplan, this.viewport, this.snapping, {
+      catalog: this.catalog,
+      ...(options.selection && { selection: options.selection }),
+      ...(options.placement && { placement: options.placement }),
+    })
 
     this.cleanups.push(
       this.floorplan.on('change', this.scheduleRender),
+      this.catalog.on('change', this.scheduleRender),
       this.interaction.on('invalidate', this.scheduleRender),
       this.interaction.on('mode', (mode) => {
         this.updateCursor()
@@ -140,6 +157,11 @@ export class PlanEditor {
     return this.interaction.deleteSelection()
   }
 
+  /** Turns the selected item counter-clockwise by `angle` radians. */
+  turnSelectedItem(angle: number): boolean {
+    return this.interaction.turnSelectedItem(angle)
+  }
+
   /** Removes the canvas and all listeners. The editor cannot be used afterwards. */
   dispose(): void {
     if (this.disposed) return
@@ -147,6 +169,7 @@ export class PlanEditor {
     if (this.frame !== null) cancelAnimationFrame(this.frame)
     this.resizeObserver.disconnect()
     for (const cleanup of this.cleanups) cleanup()
+    this.interaction.dispose()
     this.canvas.remove()
   }
 
@@ -239,13 +262,26 @@ export class PlanEditor {
     if (this.disposed || this.viewport.width === 0 || this.viewport.height === 0) return
     const ratio = this.canvas.width / this.viewport.width
     this.context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    const selection = this.interaction.selection
+    const selectedItem =
+      selection?.kind === 'item' ? this.floorplan.getItem(selection.id) : undefined
     render(this.context, {
       floorplan: this.floorplan,
       viewport: this.viewport,
       hover: this.interaction.hover,
-      selection: this.interaction.selection,
+      selection,
       preview: this.interaction.preview,
       theme: this.theme,
+      sizeOf: this.catalog.sizeOf,
+      overlaps: findOverlaps(this.floorplan, this.catalog.sizeOf),
+      rotateHandle: selectedItem
+        ? rotateHandlePosition(
+            selectedItem,
+            this.catalog.sizeOf(selectedItem.catalogKey),
+            this.viewport.metresPerPixel,
+          )
+        : null,
+      rotateHandleHover: this.interaction.overRotateHandle,
     })
   }
 
@@ -253,6 +289,7 @@ export class PlanEditor {
     const { mode, hover } = this.interaction
     let cursor = 'default'
     if (mode === 'draw') cursor = 'crosshair'
+    else if (this.interaction.overRotateHandle) cursor = 'alias'
     else if (hover)
       cursor = mode === 'delete' ? 'pointer' : hover.kind === 'corner' ? 'move' : 'grab'
     this.canvas.style.cursor = cursor
