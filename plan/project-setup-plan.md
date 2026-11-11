@@ -14,7 +14,7 @@ Each phase has its own file. A phase starts only after its own go-ahead.
 | 3     | [3D view](phase-3-3d-view.md)                                    | Done        |
 | 4     | [Catalogue and furniture](phase-4-catalogue-and-furniture.md)    | Done        |
 | 5     | [Doors and windows](phase-5-doors-and-windows.md)                | Done        |
-| 6     | [Plan list, save and load screens](phase-6-plan-screens.md)      | Not started |
+| 6     | [Plan list, save and load screens](phase-6-plan-screens.md)      | Done        |
 | 7     | [Undo and redo, polish, wider tests](phase-7-undo-and-polish.md) | Not started |
 | 8     | [Login](phase-8-login.md)                                        | Not started |
 
