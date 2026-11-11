@@ -7,6 +7,7 @@ import {
 } from '@floorplandesigner/engine'
 import type { PlanRecord } from '@floorplandesigner/shared'
 import {
+  Armchair,
   Box,
   Footprints,
   Maximize,
@@ -16,14 +17,18 @@ import {
   Save,
   Square,
   Trash2,
+  X,
 } from 'lucide-react'
 import { useEffect, useReducer, useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { catalog, catalogItem } from '@/features/catalog/catalog'
+import { CatalogPanel } from '@/features/catalog/CatalogPanel'
 import { usePlans, useSavePlan } from '@/features/plans/queries'
 import { writePlanIdToUrl } from '@/lib/plan-url'
 import { EngineCanvas, type EditorView } from './EngineCanvas'
+import { ItemInspector } from './ItemInspector'
 import { WallInspector } from './WallInspector'
 
 interface EditorProps {
@@ -42,7 +47,7 @@ const CAMERA_MODES: { value: CameraMode; label: string; icon: typeof Rotate3d; h
     value: 'orbit',
     label: 'Orbit',
     icon: Rotate3d,
-    hint: 'Drag to orbit, right-drag to pan, scroll to zoom. Walls in front of a room are lowered so you can see in.',
+    hint: 'Drag to orbit, right-drag to pan, scroll to zoom. Drag furniture to move it; R turns it, Delete removes it.',
   },
   {
     value: 'walk',
@@ -58,6 +63,8 @@ export function Editor({ initialPlan }: EditorProps) {
   const [mode, setMode] = useState<EditorMode>('move')
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit')
   const [selection, setSelection] = useState<Selection>(null)
+  const [catalogOpen, setCatalogOpen] = useState(true)
+  const [itemError, setItemError] = useState<string | null>(null)
   const [planId, setPlanId] = useState(initialPlan?.id ?? null)
   const [name, setName] = useState(initialPlan?.name ?? 'Untitled plan')
   // Kept from the first render: later saves must not reload the plan over the working copy.
@@ -67,6 +74,9 @@ export function Editor({ initialPlan }: EditorProps) {
   const plans = usePlans()
   const save = useSavePlan()
 
+  // Before the plan is loaded, so its items are drawn at their sizes from the start.
+  useEffect(() => engine?.setCatalog(catalog.items), [engine])
+
   useEffect(() => {
     if (!engine) return
     engine.load(initialDocument)
@@ -74,14 +84,17 @@ export function Editor({ initialPlan }: EditorProps) {
   }, [engine, initialDocument])
 
   useEffect(() => {
-    if (!engine?.editor) return
-    // A new editor starts in move mode with nothing selected, matching the initial state here.
-    const { editor } = engine
+    if (!engine) return
+    // A new engine starts in move mode with nothing selected, matching the initial state here.
     const stops = [
-      editor.on('mode', setMode),
-      editor.on('selection', setSelection),
+      engine.on('selection', setSelection),
+      engine.on('itemError', ({ catalogKey }) => {
+        const name = catalogItem(catalogKey)?.name ?? catalogKey
+        setItemError(`Could not load the model for “${name}”. It is shown as a box.`)
+      }),
       engine.floorplan.on('change', bump),
     ]
+    if (engine.editor) stops.push(engine.editor.on('mode', setMode))
     return () => stops.forEach((stop) => stop())
   }, [engine])
 
@@ -116,6 +129,16 @@ export function Editor({ initialPlan }: EditorProps) {
 
   const selectedWall =
     selection?.kind === 'wall' ? (engine?.floorplan.getWall(selection.id) ?? null) : null
+  const selectedItem =
+    selection?.kind === 'item' ? (engine?.floorplan.getItem(selection.id) ?? null) : null
+
+  function addItem(key: string) {
+    if (!engine) return
+    engine.addItem(key)
+    // Focus the view showing, so R and Delete work on the new item straight away.
+    const canvas = view === '2d' ? engine.editor?.canvas : engine.view3d.canvas
+    canvas?.focus({ preventScroll: true })
+  }
 
   return (
     <div className="flex h-dvh flex-col">
@@ -148,6 +171,21 @@ export function Editor({ initialPlan }: EditorProps) {
       </header>
 
       <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={catalogOpen ? 'secondary' : 'outline'}
+              size="sm"
+              aria-pressed={catalogOpen}
+              aria-label="Furniture catalogue"
+              onClick={() => setCatalogOpen((open) => !open)}
+            >
+              <Armchair data-icon="inline-start" />
+              Furniture
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{catalogOpen ? 'Hide' : 'Show'} the furniture catalogue</TooltipContent>
+        </Tooltip>
         <ToggleGroup
           type="single"
           variant="outline"
@@ -194,8 +232,8 @@ export function Editor({ initialPlan }: EditorProps) {
               {mode === 'draw'
                 ? 'Click to place corners. Click the first corner, press Escape or double click to finish. Hold Alt to disable snapping.'
                 : mode === 'delete'
-                  ? 'Click a wall or corner to remove it.'
-                  : 'Drag corners and walls. Drag empty space to pan, scroll to zoom.'}
+                  ? 'Click a wall, corner or item to remove it.'
+                  : 'Drag corners, walls and furniture. R turns the selected item. Drag empty space to pan, scroll to zoom.'}
             </span>
             {selectedWall && (
               <WallInspector
@@ -233,10 +271,41 @@ export function Editor({ initialPlan }: EditorProps) {
             </span>
           </>
         )}
+
+        {selectedItem && engine && (
+          <ItemInspector
+            key={selectedItem.id}
+            item={selectedItem}
+            name={catalogItem(selectedItem.catalogKey)?.name ?? selectedItem.catalogKey}
+            onRotate={(rotation) => engine.floorplan.updateItem(selectedItem.id, { rotation })}
+            onDelete={() => engine.floorplan.removeItem(selectedItem.id)}
+          />
+        )}
       </div>
 
-      <main className="relative min-h-0 flex-1">
-        <EngineCanvas view={view} onEngineChange={setEngine} className="absolute inset-0" />
+      {itemError && (
+        <div
+          role="alert"
+          className="flex shrink-0 items-center gap-2 border-b bg-destructive/10 px-4 py-1.5 text-sm text-destructive"
+        >
+          {itemError}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Dismiss"
+            className="ml-auto"
+            onClick={() => setItemError(null)}
+          >
+            <X />
+          </Button>
+        </div>
+      )}
+
+      <main className="flex min-h-0 flex-1">
+        {catalogOpen && <CatalogPanel onAdd={addItem} enabled={engine !== null} />}
+        <div className="relative min-w-0 flex-1">
+          <EngineCanvas view={view} onEngineChange={setEngine} className="absolute inset-0" />
+        </div>
       </main>
     </div>
   )
