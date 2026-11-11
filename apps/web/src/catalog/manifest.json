@@ -1,3 +1,446 @@
 {
-  "items": []
+  "items": [
+    {
+      "key": "lounge-sofa",
+      "name": "Sofa",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/loungeSofa.glb",
+      "thumbnail": "/models/kenney-furniture-kit/loungeSofa.png",
+      "size": {
+        "width": 1.96,
+        "height": 0.92,
+        "depth": 0.82
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "lounge-sofa-long",
+      "name": "Sofa with chaise",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/loungeSofaLong.glb",
+      "thumbnail": "/models/kenney-furniture-kit/loungeSofaLong.png",
+      "size": {
+        "width": 1.96,
+        "height": 0.92,
+        "depth": 1.64
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "lounge-sofa-corner",
+      "name": "Corner sofa",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/loungeSofaCorner.glb",
+      "thumbnail": "/models/kenney-furniture-kit/loungeSofaCorner.png",
+      "size": {
+        "width": 1.96,
+        "height": 0.92,
+        "depth": 1.96
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "lounge-chair",
+      "name": "Armchair",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/loungeChair.glb",
+      "thumbnail": "/models/kenney-furniture-kit/loungeChair.png",
+      "size": {
+        "width": 0.98,
+        "height": 0.92,
+        "depth": 0.82
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "lounge-design-sofa",
+      "name": "Design sofa",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/loungeDesignSofa.glb",
+      "thumbnail": "/models/kenney-furniture-kit/loungeDesignSofa.png",
+      "size": {
+        "width": 2.24,
+        "height": 0.8,
+        "depth": 0.82
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "table-coffee",
+      "name": "Coffee table",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/tableCoffee.glb",
+      "thumbnail": "/models/kenney-furniture-kit/tableCoffee.png",
+      "size": {
+        "width": 1.32,
+        "height": 0.46,
+        "depth": 0.8
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "table-coffee-glass",
+      "name": "Glass coffee table",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/tableCoffeeGlass.glb",
+      "thumbnail": "/models/kenney-furniture-kit/tableCoffeeGlass.png",
+      "size": {
+        "width": 1.32,
+        "height": 0.46,
+        "depth": 0.8
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "cabinet-television",
+      "name": "TV cabinet",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/cabinetTelevision.glb",
+      "thumbnail": "/models/kenney-furniture-kit/cabinetTelevision.png",
+      "size": {
+        "width": 1.6,
+        "height": 0.62,
+        "depth": 0.5
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "bookcase-open",
+      "name": "Bookcase",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/bookcaseOpen.glb",
+      "thumbnail": "/models/kenney-furniture-kit/bookcaseOpen.png",
+      "size": {
+        "width": 0.8,
+        "height": 1.76,
+        "depth": 0.5
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "bookcase-closed-wide",
+      "name": "Wide cabinet",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/bookcaseClosedWide.glb",
+      "thumbnail": "/models/kenney-furniture-kit/bookcaseClosedWide.png",
+      "size": {
+        "width": 1.6,
+        "height": 1.58,
+        "depth": 0.5
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "lamp-round-floor",
+      "name": "Floor lamp",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/lampRoundFloor.glb",
+      "thumbnail": "/models/kenney-furniture-kit/lampRoundFloor.png",
+      "size": {
+        "width": 0.3,
+        "height": 1.72,
+        "depth": 0.35
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "potted-plant",
+      "name": "Potted plant",
+      "category": "Living room",
+      "model": "/models/kenney-furniture-kit/pottedPlant.glb",
+      "thumbnail": "/models/kenney-furniture-kit/pottedPlant.png",
+      "size": {
+        "width": 0.42,
+        "height": 1.31,
+        "depth": 0.48
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "bed-double",
+      "name": "Double bed",
+      "category": "Bedroom",
+      "model": "/models/kenney-furniture-kit/bedDouble.glb",
+      "thumbnail": "/models/kenney-furniture-kit/bedDouble.png",
+      "size": {
+        "width": 1.91,
+        "height": 0.75,
+        "depth": 2.25
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "bed-single",
+      "name": "Single bed",
+      "category": "Bedroom",
+      "model": "/models/kenney-furniture-kit/bedSingle.glb",
+      "thumbnail": "/models/kenney-furniture-kit/bedSingle.png",
+      "size": {
+        "width": 1.14,
+        "height": 0.75,
+        "depth": 2.25
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "bed-bunk",
+      "name": "Bunk bed",
+      "category": "Bedroom",
+      "model": "/models/kenney-furniture-kit/bedBunk.glb",
+      "thumbnail": "/models/kenney-furniture-kit/bedBunk.png",
+      "size": {
+        "width": 1.14,
+        "height": 1.7,
+        "depth": 2.19
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "cabinet-bed-drawer-table",
+      "name": "Bedside table",
+      "category": "Bedroom",
+      "model": "/models/kenney-furniture-kit/cabinetBedDrawerTable.glb",
+      "thumbnail": "/models/kenney-furniture-kit/cabinetBedDrawerTable.png",
+      "size": {
+        "width": 0.53,
+        "height": 0.53,
+        "depth": 0.43
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "coat-rack-standing",
+      "name": "Coat stand",
+      "category": "Bedroom",
+      "model": "/models/kenney-furniture-kit/coatRackStanding.glb",
+      "thumbnail": "/models/kenney-furniture-kit/coatRackStanding.png",
+      "size": {
+        "width": 0.55,
+        "height": 1.54,
+        "depth": 0.55
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "table",
+      "name": "Dining table",
+      "category": "Kitchen and dining",
+      "model": "/models/kenney-furniture-kit/table.glb",
+      "thumbnail": "/models/kenney-furniture-kit/table.png",
+      "size": {
+        "width": 1.68,
+        "height": 0.65,
+        "depth": 0.89
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "table-round",
+      "name": "Round table",
+      "category": "Kitchen and dining",
+      "model": "/models/kenney-furniture-kit/tableRound.glb",
+      "thumbnail": "/models/kenney-furniture-kit/tableRound.png",
+      "size": {
+        "width": 1.39,
+        "height": 0.73,
+        "depth": 1.6
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "chair",
+      "name": "Chair",
+      "category": "Kitchen and dining",
+      "model": "/models/kenney-furniture-kit/chair.glb",
+      "thumbnail": "/models/kenney-furniture-kit/chair.png",
+      "size": {
+        "width": 0.4,
+        "height": 0.94,
+        "depth": 0.4
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "chair-cushion",
+      "name": "Cushioned chair",
+      "category": "Kitchen and dining",
+      "model": "/models/kenney-furniture-kit/chairCushion.glb",
+      "thumbnail": "/models/kenney-furniture-kit/chairCushion.png",
+      "size": {
+        "width": 0.4,
+        "height": 0.92,
+        "depth": 0.4
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "kitchen-fridge-large",
+      "name": "Large fridge",
+      "category": "Kitchen and dining",
+      "model": "/models/kenney-furniture-kit/kitchenFridgeLarge.glb",
+      "thumbnail": "/models/kenney-furniture-kit/kitchenFridgeLarge.png",
+      "size": {
+        "width": 1.04,
+        "height": 1.84,
+        "depth": 0.81
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "kitchen-stove",
+      "name": "Stove",
+      "category": "Kitchen and dining",
+      "model": "/models/kenney-furniture-kit/kitchenStove.glb",
+      "thumbnail": "/models/kenney-furniture-kit/kitchenStove.png",
+      "size": {
+        "width": 0.86,
+        "height": 0.9,
+        "depth": 0.9
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "kitchen-sink",
+      "name": "Kitchen sink",
+      "category": "Kitchen and dining",
+      "model": "/models/kenney-furniture-kit/kitchenSink.glb",
+      "thumbnail": "/models/kenney-furniture-kit/kitchenSink.png",
+      "size": {
+        "width": 0.86,
+        "height": 0.98,
+        "depth": 0.9
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "kitchen-cabinet",
+      "name": "Kitchen cabinet",
+      "category": "Kitchen and dining",
+      "model": "/models/kenney-furniture-kit/kitchenCabinet.glb",
+      "thumbnail": "/models/kenney-furniture-kit/kitchenCabinet.png",
+      "size": {
+        "width": 0.86,
+        "height": 0.9,
+        "depth": 0.9
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "kitchen-cabinet-drawer",
+      "name": "Kitchen drawers",
+      "category": "Kitchen and dining",
+      "model": "/models/kenney-furniture-kit/kitchenCabinetDrawer.glb",
+      "thumbnail": "/models/kenney-furniture-kit/kitchenCabinetDrawer.png",
+      "size": {
+        "width": 0.86,
+        "height": 0.9,
+        "depth": 0.9
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "bathtub",
+      "name": "Bathtub",
+      "category": "Bathroom",
+      "model": "/models/kenney-furniture-kit/bathtub.glb",
+      "thumbnail": "/models/kenney-furniture-kit/bathtub.png",
+      "size": {
+        "width": 2.38,
+        "height": 0.84,
+        "depth": 1.12
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "shower",
+      "name": "Shower",
+      "category": "Bathroom",
+      "model": "/models/kenney-furniture-kit/shower.glb",
+      "thumbnail": "/models/kenney-furniture-kit/shower.png",
+      "size": {
+        "width": 1.12,
+        "height": 2.19,
+        "depth": 1.16
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "toilet",
+      "name": "Toilet",
+      "category": "Bathroom",
+      "model": "/models/kenney-furniture-kit/toilet.glb",
+      "thumbnail": "/models/kenney-furniture-kit/toilet.png",
+      "size": {
+        "width": 0.63,
+        "height": 0.9,
+        "depth": 0.95
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "bathroom-sink",
+      "name": "Washbasin",
+      "category": "Bathroom",
+      "model": "/models/kenney-furniture-kit/bathroomSink.glb",
+      "thumbnail": "/models/kenney-furniture-kit/bathroomSink.png",
+      "size": {
+        "width": 0.68,
+        "height": 1.12,
+        "depth": 0.58
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "washer",
+      "name": "Washing machine",
+      "category": "Bathroom",
+      "model": "/models/kenney-furniture-kit/washer.glb",
+      "thumbnail": "/models/kenney-furniture-kit/washer.png",
+      "size": {
+        "width": 0.78,
+        "height": 0.94,
+        "depth": 0.78
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "desk",
+      "name": "Desk",
+      "category": "Office",
+      "model": "/models/kenney-furniture-kit/desk.glb",
+      "thumbnail": "/models/kenney-furniture-kit/desk.png",
+      "size": {
+        "width": 1.47,
+        "height": 0.77,
+        "depth": 0.78
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "desk-corner",
+      "name": "Corner desk",
+      "category": "Office",
+      "model": "/models/kenney-furniture-kit/deskCorner.glb",
+      "thumbnail": "/models/kenney-furniture-kit/deskCorner.png",
+      "size": {
+        "width": 1.95,
+        "height": 0.77,
+        "depth": 1.95
+      },
+      "placement": "floor"
+    },
+    {
+      "key": "chair-desk",
+      "name": "Office chair",
+      "category": "Office",
+      "model": "/models/kenney-furniture-kit/chairDesk.glb",
+      "thumbnail": "/models/kenney-furniture-kit/chairDesk.png",
+      "size": {
+        "width": 0.67,
+        "height": 1.22,
+        "depth": 0.63
+      },
+      "placement": "floor"
+    }
+  ]
 }

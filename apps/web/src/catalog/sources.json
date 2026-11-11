@@ -1,0 +1,136 @@
+{
+  "$comment": "The starter catalogue. Run `pnpm --filter @floorplandesigner/web build:catalog` after editing to regenerate manifest.json. Sizes are measured from the models, never typed by hand.",
+  "folder": "/models/kenney-furniture-kit",
+  "scale": 2,
+  "items": [
+    { "key": "lounge-sofa", "file": "loungeSofa", "name": "Sofa", "category": "Living room" },
+    {
+      "key": "lounge-sofa-long",
+      "file": "loungeSofaLong",
+      "name": "Sofa with chaise",
+      "category": "Living room"
+    },
+    {
+      "key": "lounge-sofa-corner",
+      "file": "loungeSofaCorner",
+      "name": "Corner sofa",
+      "category": "Living room"
+    },
+    { "key": "lounge-chair", "file": "loungeChair", "name": "Armchair", "category": "Living room" },
+    {
+      "key": "lounge-design-sofa",
+      "file": "loungeDesignSofa",
+      "name": "Design sofa",
+      "category": "Living room"
+    },
+    {
+      "key": "table-coffee",
+      "file": "tableCoffee",
+      "name": "Coffee table",
+      "category": "Living room"
+    },
+    {
+      "key": "table-coffee-glass",
+      "file": "tableCoffeeGlass",
+      "name": "Glass coffee table",
+      "category": "Living room"
+    },
+    {
+      "key": "cabinet-television",
+      "file": "cabinetTelevision",
+      "name": "TV cabinet",
+      "category": "Living room"
+    },
+    {
+      "key": "bookcase-open",
+      "file": "bookcaseOpen",
+      "name": "Bookcase",
+      "category": "Living room"
+    },
+    {
+      "key": "bookcase-closed-wide",
+      "file": "bookcaseClosedWide",
+      "name": "Wide cabinet",
+      "category": "Living room"
+    },
+    {
+      "key": "lamp-round-floor",
+      "file": "lampRoundFloor",
+      "name": "Floor lamp",
+      "category": "Living room"
+    },
+    {
+      "key": "potted-plant",
+      "file": "pottedPlant",
+      "name": "Potted plant",
+      "category": "Living room"
+    },
+    { "key": "bed-double", "file": "bedDouble", "name": "Double bed", "category": "Bedroom" },
+    { "key": "bed-single", "file": "bedSingle", "name": "Single bed", "category": "Bedroom" },
+    { "key": "bed-bunk", "file": "bedBunk", "name": "Bunk bed", "category": "Bedroom" },
+    {
+      "key": "cabinet-bed-drawer-table",
+      "file": "cabinetBedDrawerTable",
+      "name": "Bedside table",
+      "category": "Bedroom"
+    },
+    {
+      "key": "coat-rack-standing",
+      "file": "coatRackStanding",
+      "name": "Coat stand",
+      "category": "Bedroom"
+    },
+    { "key": "table", "file": "table", "name": "Dining table", "category": "Kitchen and dining" },
+    {
+      "key": "table-round",
+      "file": "tableRound",
+      "name": "Round table",
+      "category": "Kitchen and dining"
+    },
+    { "key": "chair", "file": "chair", "name": "Chair", "category": "Kitchen and dining" },
+    {
+      "key": "chair-cushion",
+      "file": "chairCushion",
+      "name": "Cushioned chair",
+      "category": "Kitchen and dining"
+    },
+    {
+      "key": "kitchen-fridge-large",
+      "file": "kitchenFridgeLarge",
+      "name": "Large fridge",
+      "category": "Kitchen and dining"
+    },
+    {
+      "key": "kitchen-stove",
+      "file": "kitchenStove",
+      "name": "Stove",
+      "category": "Kitchen and dining"
+    },
+    {
+      "key": "kitchen-sink",
+      "file": "kitchenSink",
+      "name": "Kitchen sink",
+      "category": "Kitchen and dining"
+    },
+    {
+      "key": "kitchen-cabinet",
+      "file": "kitchenCabinet",
+      "name": "Kitchen cabinet",
+      "category": "Kitchen and dining"
+    },
+    {
+      "key": "kitchen-cabinet-drawer",
+      "file": "kitchenCabinetDrawer",
+      "name": "Kitchen drawers",
+      "category": "Kitchen and dining"
+    },
+    { "key": "bathtub", "file": "bathtub", "name": "Bathtub", "category": "Bathroom" },
+    { "key": "shower", "file": "shower", "name": "Shower", "category": "Bathroom" },
+    { "key": "toilet", "file": "toilet", "name": "Toilet", "category": "Bathroom" },
+    { "key": "bathroom-sink", "file": "bathroomSink", "name": "Washbasin", "category": "Bathroom" },
+    { "key": "washer", "file": "washer", "name": "Washing machine", "category": "Bathroom" },
+    { "key": "desk", "file": "desk", "name": "Desk", "category": "Office" },
+    { "key": "desk-corner", "file": "deskCorner", "name": "Corner desk", "category": "Office" },
+    { "key": "chair-desk", "file": "chairDesk", "name": "Office chair", "category": "Office" }
+  ]
+}

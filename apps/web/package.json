@@ -6,10 +6,12 @@
   "type": "module",
   "scripts": {
     "copy:draco": "node scripts/copy-draco.mjs",
+    "build:catalog": "node scripts/build-catalog.mjs",
     "dev": "node scripts/copy-draco.mjs && vite",
     "build": "node scripts/copy-draco.mjs && tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@floorplandesigner/engine": "workspace:*",
@@ -30,12 +32,14 @@
   "devDependencies": {
     "@floorplandesigner/api": "workspace:*",
     "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "catalog:",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "catalog:",
     "@vitejs/plugin-react": "^6.3.0",
     "tailwindcss": "^4.3.5",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }
