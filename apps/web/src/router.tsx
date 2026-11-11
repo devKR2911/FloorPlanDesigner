@@ -3,9 +3,12 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   redirect,
+  type RouterHistory,
 } from '@tanstack/react-router'
-import { EditorScreen, NotFoundScreen } from '@/features/editor/EditorScreen'
+import { NotFoundScreen } from '@/components/not-found-screen'
+import { ScreenMessage } from '@/components/screen-message'
 import { PlanListScreen } from '@/features/plans/PlanListScreen'
 
 const rootRoute = createRootRoute({
@@ -30,15 +33,23 @@ const planListRoute = createRoute({
 const editorRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/plans/$planId',
-  component: function EditorRoute() {
-    const { planId } = editorRoute.useParams()
-    return <EditorScreen planId={planId} />
-  },
+  // The editor brings the engine and Three.js with it, so it is loaded when first needed and
+  // the plan list opens without them.
+  component: lazyRouteComponent(() => import('@/features/editor/EditorScreen'), 'EditorScreen'),
 })
 
-export const router = createRouter({
-  routeTree: rootRoute.addChildren([planListRoute, editorRoute]),
-})
+const routeTree = rootRoute.addChildren([planListRoute, editorRoute])
+
+/** Makes the app's router. Tests pass a history that lives in memory. */
+export function createAppRouter(history?: RouterHistory) {
+  return createRouter({
+    routeTree,
+    defaultPendingComponent: () => <ScreenMessage>Loading…</ScreenMessage>,
+    ...(history && { history }),
+  })
+}
+
+export const router = createAppRouter()
 
 declare module '@tanstack/react-router' {
   interface Register {

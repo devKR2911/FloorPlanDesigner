@@ -6,8 +6,5 @@ dist
 .env.*
 !.env.example
 
-# Copied from the three package by apps/web/scripts/copy-draco.mjs
-apps/web/public/draco
-
 .DS_Store
 .claude/settings.local.json

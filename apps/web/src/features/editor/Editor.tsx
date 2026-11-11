@@ -16,11 +16,13 @@ import {
   Pencil,
   Rotate3d,
   Square,
+  Redo2,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react'
 import { useBlocker } from '@tanstack/react-router'
-import { useCallback, useEffect, useReducer, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,13 +39,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { catalog, catalogItem } from '@/features/catalog/catalog'
 import { CatalogPanel } from '@/features/catalog/CatalogPanel'
 import type { OpeningPreset } from '@/features/catalog/openings'
-import { useRenamePlan, useSavePlan } from '@/features/plans/queries'
+import { useRenamePlan } from '@/features/plans/queries'
 import { ApiError, describeError } from '@/lib/api-client'
 import { EditorHeader, type SaveStatus } from './EditorHeader'
 import { EngineCanvas, type EditorView } from './EngineCanvas'
 import { ItemInspector } from './ItemInspector'
 import { OpeningInspector } from './OpeningInspector'
-import { useUnsavedChanges } from './use-unsaved-changes'
+import { useHistoryState, usePlanSaving } from './use-plan-saving'
 import { WallInspector } from './WallInspector'
 
 interface EditorProps {
@@ -51,8 +53,12 @@ interface EditorProps {
   plan: PlanRecord
 }
 
-/** The size of the picture of the plan that is saved for the plan list, in CSS pixels. */
-const THUMBNAIL_SIZE = { width: 320, height: 200 }
+/** Whether a key press is meant for a text field, which has its own undo. */
+function isTextField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target instanceof HTMLTextAreaElement || target.isContentEditable) return true
+  return target instanceof HTMLInputElement
+}
 
 const MODES: { value: EditorMode; label: string; icon: typeof MousePointer2 }[] = [
   { value: 'move', label: 'Move and select', icon: MousePointer2 },
@@ -87,9 +93,13 @@ export function Editor({ plan }: EditorProps) {
   const [initialDocument] = useState(plan.document)
   // Bumped on every model change so the inspector shows current values.
   const [, bump] = useReducer((n: number) => n + 1, 0)
-  const save = useSavePlan()
   const rename = useRenamePlan()
-  const changes = useUnsavedChanges(engine)
+  const history = useHistoryState(engine)
+  const { dirty, saving, error, flush, markLoaded } = usePlanSaving(
+    engine,
+    plan.id,
+    history.position,
+  )
 
   // Before the plan is loaded, so its items are drawn at their sizes from the start.
   useEffect(() => engine?.setCatalog(catalog.items), [engine])
@@ -97,8 +107,9 @@ export function Editor({ plan }: EditorProps) {
   useEffect(() => {
     if (!engine) return
     engine.load(initialDocument)
+    markLoaded()
     engine.editor?.fit()
-  }, [engine, initialDocument])
+  }, [engine, initialDocument, markLoaded])
 
   useEffect(() => {
     if (!engine) return
@@ -118,57 +129,50 @@ export function Editor({ plan }: EditorProps) {
   // A new 3D view starts in orbit mode, matching the initial state here.
   useEffect(() => engine?.view3d.on('cameraMode', setCameraMode), [engine])
 
-  const { dirty, begin, markSaved } = changes
-  const { mutateAsync: saveAsync, isPending: saving } = save
-  const canSave = engine !== null && dirty && !saving
-
-  /** Saves the drawing and its picture. Resolves to whether it worked. */
-  const saveNow = useCallback(async (): Promise<boolean> => {
-    if (!engine) return false
-    const revision = begin()
-    try {
-      await saveAsync({
-        id: plan.id,
-        document: engine.export(),
-        thumbnail: engine.editor?.snapshot(THUMBNAIL_SIZE) ?? null,
-      })
-      markSaved(revision)
-      return true
-    } catch {
-      // The header shows what went wrong, from the mutation's own state.
-      return false
-    }
-  }, [engine, plan.id, begin, markSaved, saveAsync])
-
-  // Ctrl+S, or Cmd+S on a Mac, saves from anywhere on the screen.
+  // Ctrl+S saves now; Ctrl+Z undoes; Ctrl+Shift+Z and Ctrl+Y redo. Cmd on a Mac.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key.toLowerCase() !== 's' || !(event.ctrlKey || event.metaKey)) return
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key === 's') {
+        event.preventDefault()
+        void flush()
+        return
+      }
+      // A text field keeps its own undo for what is typed into it.
+      if (!engine || isTextField(event.target)) return
+      if (key === 'z' && !event.shiftKey) engine.history.undo()
+      else if ((key === 'z' && event.shiftKey) || key === 'y') engine.history.redo()
+      else return
       event.preventDefault()
-      if (canSave) void saveNow()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canSave, saveNow])
+  }, [engine, flush])
 
   useEffect(() => {
     document.title = `${plan.name} – Floor Plan Designer`
   }, [plan.name])
 
-  // Leaving with unsaved changes asks first. Closing the tab gets the browser's own prompt.
+  // Leaving the editor saves first. It only asks when that save fails, and closing the tab
+  // gets the browser's own prompt while something is unsaved, since a page cannot wait there.
+  const dirtyNow = useRef(dirty)
+  useEffect(() => {
+    dirtyNow.current = dirty
+  }, [dirty])
   const leaving = useBlocker({
-    shouldBlockFn: () => dirty,
-    enableBeforeUnload: () => dirty,
+    shouldBlockFn: async () => !(await flush()),
+    enableBeforeUnload: () => dirtyNow.current,
     withResolver: true,
   })
 
   let status: SaveStatus
   if (saving) status = { kind: 'saving' }
-  else if (save.isError) {
+  else if (error !== null) {
     status = {
       kind: 'error',
-      message: `Could not save: ${describeError(save.error)}`,
-      missing: save.error instanceof ApiError && save.error.status === 404,
+      message: `Could not save: ${describeError(error)}`,
+      missing: error instanceof ApiError && error.status === 404,
     }
   } else if (dirty) status = { kind: 'unsaved' }
   else status = { kind: 'saved', at: plan.updatedAt }
@@ -227,8 +231,6 @@ export function Editor({ plan }: EditorProps) {
         onRename={(name) => rename.mutate({ id: plan.id, name })}
         renameError={rename.isError ? `Could not rename: ${describeError(rename.error)}` : null}
         status={status}
-        canSave={canSave}
-        onSave={() => void saveNow()}
       />
 
       <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
@@ -247,6 +249,36 @@ export function Editor({ plan }: EditorProps) {
           </TooltipTrigger>
           <TooltipContent>{catalogOpen ? 'Hide' : 'Show'} the furniture catalogue</TooltipContent>
         </Tooltip>
+        <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Undo"
+                disabled={!history.canUndo}
+                onClick={() => engine?.history.undo()}
+              >
+                <Undo2 />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Undo (Ctrl+Z)</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Redo"
+                disabled={!history.canRedo}
+                onClick={() => engine?.history.redo()}
+              >
+                <Redo2 />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Redo (Ctrl+Shift+Z)</TooltipContent>
+          </Tooltip>
+        </div>
         <ToggleGroup
           type="single"
           variant="outline"
@@ -383,10 +415,10 @@ export function Editor({ plan }: EditorProps) {
       <AlertDialog open={leaving.status === 'blocked'}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Save your changes?</AlertDialogTitle>
+            <AlertDialogTitle>Your changes could not be saved</AlertDialogTitle>
             <AlertDialogDescription>
-              “{plan.name}” has changes that are not saved. If you leave without saving, they are
-              lost.
+              {error !== null ? describeError(error) : 'The last save did not go through.'} If you
+              leave now, the changes to “{plan.name}” since the last save are lost.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -399,11 +431,10 @@ export function Editor({ plan }: EditorProps) {
               onClick={async (event) => {
                 // Keep the dialog open until the save has finished.
                 event.preventDefault()
-                if (await saveNow()) leaving.proceed?.()
-                else leaving.reset?.()
+                if (await flush()) leaving.proceed?.()
               }}
             >
-              Save and leave
+              Try again
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

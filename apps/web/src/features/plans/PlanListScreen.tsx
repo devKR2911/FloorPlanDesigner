@@ -45,10 +45,13 @@ export function PlanListScreen() {
     <div className="flex min-h-dvh flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
         <h1 className="text-sm font-semibold">Floor Plan Designer</h1>
-        <Button className="ml-auto" onClick={openCreate}>
-          <Plus data-icon="inline-start" />
-          New plan
-        </Button>
+        {/* With no plans yet, the welcome below has the one button to make the first. */}
+        {all.length > 0 && (
+          <Button className="ml-auto" onClick={openCreate}>
+            <Plus data-icon="inline-start" />
+            New plan
+          </Button>
+        )}
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 p-6">

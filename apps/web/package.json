@@ -5,10 +5,9 @@
   "description": "React app for the floor plan designer.",
   "type": "module",
   "scripts": {
-    "copy:draco": "node scripts/copy-draco.mjs",
     "build:catalog": "node scripts/build-catalog.mjs",
-    "dev": "node scripts/copy-draco.mjs && vite",
-    "build": "node scripts/copy-draco.mjs && tsc -p tsconfig.json && vite build",
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"

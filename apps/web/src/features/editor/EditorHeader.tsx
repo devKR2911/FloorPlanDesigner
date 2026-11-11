@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ChevronLeft, Save } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { MAX_PLAN_NAME_LENGTH } from '@/features/plans/PlanDialogs'
@@ -18,19 +18,13 @@ interface EditorHeaderProps {
   /** What went wrong with the last rename, if it failed. */
   renameError: string | null
   status: SaveStatus
-  canSave: boolean
-  onSave: () => void
 }
 
-/** The editor's top bar: the way back to the list, the plan's name, and saving. */
-export function EditorHeader({
-  name,
-  onRename,
-  renameError,
-  status,
-  canSave,
-  onSave,
-}: EditorHeaderProps) {
+/**
+ * The editor's top bar: the way back to the list, the plan's name, and whether the drawing is
+ * saved. Saving happens by itself, so there is no button for it.
+ */
+export function EditorHeader({ name, onRename, renameError, status }: EditorHeaderProps) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
       <Button asChild variant="ghost" size="sm" className="-ml-2">
@@ -41,10 +35,6 @@ export function EditorHeader({
       </Button>
       {/* Keyed by the saved name, so a rename elsewhere, or a refused one, resets the field. */}
       <NameField key={name} name={name} onRename={onRename} />
-      <Button disabled={!canSave} onClick={onSave}>
-        <Save data-icon="inline-start" />
-        Save
-      </Button>
       {renameError ? (
         <span role="alert" className="text-sm text-destructive">
           {renameError}
@@ -104,7 +94,7 @@ function StatusText({ status }: { status: SaveStatus }) {
       {status.kind === 'saving'
         ? 'Saving…'
         : status.kind === 'unsaved'
-          ? 'Unsaved changes'
+          ? 'Unsaved changes…'
           : `Saved at ${new Date(status.at).toLocaleTimeString()}`}
     </span>
   )

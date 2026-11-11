@@ -1,18 +1,17 @@
-import { Link } from '@tanstack/react-router'
+import { useParams } from '@tanstack/react-router'
+import { BackToPlans } from '@/components/not-found-screen'
 import { Button } from '@/components/ui/button'
 import { ScreenMessage } from '@/components/screen-message'
 import { usePlan } from '@/features/plans/queries'
 import { ApiError, describeError } from '@/lib/api-client'
 import { Editor } from './Editor'
 
-const backToPlans = (
-  <Link to="/" className="underline underline-offset-4">
-    Back to your plans
-  </Link>
-)
-
-/** Loads the plan named in the address and shows the editor for it. */
-export function EditorScreen({ planId }: { planId: string }) {
+/**
+ * Loads the plan named in the address and shows the editor for it. This screen, and with it the
+ * engine and Three.js, is fetched only when a plan is opened.
+ */
+export function EditorScreen() {
+  const { planId } = useParams({ from: '/plans/$planId' })
   const plan = usePlan(planId)
 
   if (plan.isPending) return <ScreenMessage>Loading plan…</ScreenMessage>
@@ -32,21 +31,11 @@ export function EditorScreen({ planId }: { planId: string }) {
             </Button>
           </>
         )}
-        {backToPlans}
+        <BackToPlans />
       </ScreenMessage>
     )
   }
 
   // Keyed by id, so opening another plan starts a fresh editor.
   return <Editor key={plan.data.id} plan={plan.data} />
-}
-
-/** Shown for an address that is not a screen of the app. */
-export function NotFoundScreen() {
-  return (
-    <ScreenMessage>
-      <p role="alert">Page not found.</p>
-      {backToPlans}
-    </ScreenMessage>
-  )
 }

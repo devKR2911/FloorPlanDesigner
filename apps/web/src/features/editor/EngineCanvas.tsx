@@ -23,12 +23,7 @@ export function EngineCanvas({ view, onEngineChange, className }: EngineCanvasPr
   useEffect(() => {
     if (!host2d.current || !host3d.current) return
 
-    const engine = new FloorplanEngine({
-      view3d: host3d.current,
-      view2d: host2d.current,
-      // Served by the app; copied from the three package by scripts/copy-draco.mjs.
-      dracoPath: '/draco/',
-    })
+    const engine = new FloorplanEngine({ view3d: host3d.current, view2d: host2d.current })
     if (import.meta.env.DEV) {
       // For browser checks and debugging only; not set in production builds.
       ;(window as unknown as { __floorplanEngine?: FloorplanEngine }).__floorplanEngine = engine
