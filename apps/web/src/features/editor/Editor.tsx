@@ -1,11 +1,22 @@
 import {
   createEmptyPlan,
+  type CameraMode,
   type EditorMode,
   type FloorplanEngine,
   type Selection,
 } from '@floorplandesigner/engine'
 import type { PlanRecord } from '@floorplandesigner/shared'
-import { Box, Maximize, MousePointer2, Pencil, Save, Square, Trash2 } from 'lucide-react'
+import {
+  Box,
+  Footprints,
+  Maximize,
+  MousePointer2,
+  Pencil,
+  Rotate3d,
+  Save,
+  Square,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useReducer, useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -26,10 +37,26 @@ const MODES: { value: EditorMode; label: string; icon: typeof MousePointer2 }[] 
   { value: 'delete', label: 'Delete', icon: Trash2 },
 ]
 
+const CAMERA_MODES: { value: CameraMode; label: string; icon: typeof Rotate3d; hint: string }[] = [
+  {
+    value: 'orbit',
+    label: 'Orbit',
+    icon: Rotate3d,
+    hint: 'Drag to orbit, right-drag to pan, scroll to zoom. Walls in front of a room are lowered so you can see in.',
+  },
+  {
+    value: 'walk',
+    label: 'Walk',
+    icon: Footprints,
+    hint: 'Drag to look around. Move with W A S D or the arrow keys, and hold Shift to go faster. Press Escape to leave.',
+  },
+]
+
 export function Editor({ initialPlan }: EditorProps) {
   const [engine, setEngine] = useState<FloorplanEngine | null>(null)
   const [view, setView] = useState<EditorView>('2d')
   const [mode, setMode] = useState<EditorMode>('move')
+  const [cameraMode, setCameraMode] = useState<CameraMode>('orbit')
   const [selection, setSelection] = useState<Selection>(null)
   const [planId, setPlanId] = useState(initialPlan?.id ?? null)
   const [name, setName] = useState(initialPlan?.name ?? 'Untitled plan')
@@ -57,6 +84,9 @@ export function Editor({ initialPlan }: EditorProps) {
     ]
     return () => stops.forEach((stop) => stop())
   }, [engine])
+
+  // A new 3D view starts in orbit mode, matching the initial state here.
+  useEffect(() => engine?.view3d.on('cameraMode', setCameraMode), [engine])
 
   const canSave = engine !== null && name.trim() !== '' && !save.isPending
 
@@ -159,19 +189,7 @@ export function Editor({ initialPlan }: EditorProps) {
                 </Tooltip>
               ))}
             </ToggleGroup>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Fit plan to view"
-                  onClick={() => engine.editor?.fit()}
-                >
-                  <Maximize />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Fit plan to view</TooltipContent>
-            </Tooltip>
+            <FitButton onClick={() => engine.editor?.fit()} />
             <span className="text-xs text-muted-foreground">
               {mode === 'draw'
                 ? 'Click to place corners. Click the first corner, press Escape or double click to finish. Hold Alt to disable snapping.'
@@ -189,12 +207,57 @@ export function Editor({ initialPlan }: EditorProps) {
             )}
           </>
         )}
+
+        {view === '3d' && engine && (
+          <>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              aria-label="Camera"
+              value={cameraMode}
+              onValueChange={(value) => {
+                if (value) engine.view3d.setCameraMode(value as CameraMode)
+              }}
+            >
+              {CAMERA_MODES.map(({ value, label, icon: Icon }) => (
+                <ToggleGroupItem key={value} value={value} aria-label={`${label} camera`}>
+                  <Icon />
+                  {label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            <FitButton disabled={cameraMode !== 'orbit'} onClick={() => engine.view3d.fit()} />
+            <span className="text-xs text-muted-foreground">
+              {CAMERA_MODES.find(({ value }) => value === cameraMode)?.hint}
+            </span>
+          </>
+        )}
       </div>
 
       <main className="relative min-h-0 flex-1">
         <EngineCanvas view={view} onEngineChange={setEngine} className="absolute inset-0" />
       </main>
     </div>
+  )
+}
+
+function FitButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          aria-label="Fit plan to view"
+          disabled={disabled}
+          onClick={onClick}
+        >
+          <Maximize />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Fit plan to view</TooltipContent>
+    </Tooltip>
   )
 }
 
