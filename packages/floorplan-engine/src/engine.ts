@@ -3,8 +3,14 @@ import { SelectionStore, type Selection } from './core/selection.js'
 import { PlanEditor, type PlanEditorOptions } from './editor/plan-editor.js'
 import { Floorplan, FloorplanError, type FloorplanOptions } from './model/floorplan.js'
 import type { Point } from './model/geometry.js'
+import { History } from './model/history.js'
 import { ItemCatalog } from './model/item-catalog.js'
-import { defaultPlacementSettings, placeItem, type PlacementSettings } from './model/placement.js'
+import {
+  defaultPlacementSettings,
+  findFreeSpot,
+  placeItem,
+  type PlacementSettings,
+} from './model/placement.js'
 import {
   defaultOpeningSnapSettings,
   projectOntoWall,
@@ -29,7 +35,10 @@ export interface FloorplanEngineOptions {
   view3dTheme?: Partial<View3DTheme>
   /** Wall and grid snapping for items, in both views. */
   placement?: Partial<PlacementSettings>
-  /** Where the Draco decoder files are served, such as `/draco/`, for compressed models. */
+  /**
+   * Where the Draco decoder files are served, such as `/draco/`, for compressed models. Without
+   * it, the copy that comes with Three.js is used.
+   */
   dracoPath?: string
   /** Replaces the GLB loader, for tests. */
   loadModel?: ModelLoader
@@ -47,6 +56,11 @@ export type FloorplanEngineEvents = {
 export class FloorplanEngine {
   /** The plan being edited: corners, walls, items and the rooms detected from the walls. */
   readonly floorplan: Floorplan
+  /**
+   * Undo and redo for `floorplan`. A drag in either view is one step, and loading a plan
+   * clears it.
+   */
+  readonly history: History
   /** The item definitions passed in with `setCatalog()`. */
   readonly catalog = new ItemCatalog()
   /** Wall and grid snapping for items. Change a field and the next drag uses it. */
@@ -65,6 +79,7 @@ export class FloorplanEngine {
 
   constructor(options: FloorplanEngineOptions) {
     this.floorplan = new Floorplan(options.floorplan)
+    this.history = new History(this.floorplan)
     this.placement = { ...defaultPlacementSettings, ...options.placement }
     const shared = {
       floorplan: this.floorplan,
@@ -72,6 +87,7 @@ export class FloorplanEngine {
       selection: this.selectionStore,
       placement: this.placement,
       openingSnap: this.openingSnap,
+      history: this.history,
     }
     this.editor = options.view2d
       ? new PlanEditor({ host: options.view2d, ...shared, ...options.editor })
@@ -116,20 +132,28 @@ export class FloorplanEngine {
   }
 
   /**
-   * Adds an item from the catalogue and selects it. Without a position it goes in the middle of
-   * whichever view is showing, and is snapped against a wall if one is near. Returns its id.
+   * Adds an item from the catalogue and selects it. Without a position it goes to the free place
+   * nearest the middle of whichever view is showing, and is snapped against a wall if one is
+   * near. Returns its id.
    */
   addItem(catalogKey: string, options: { position?: Point; rotation?: number } = {}): string {
     this.assertActive()
     if (!this.catalog.get(catalogKey)) {
       throw new FloorplanError(`"${catalogKey}" is not in the catalogue`)
     }
-    const placed = placeItem(
-      { position: options.position ?? this.viewCentre(), rotation: options.rotation ?? 0 },
-      this.catalog.sizeOf(catalogKey),
-      this.floorplan,
-      this.placement,
-    )
+    const size = this.catalog.sizeOf(catalogKey)
+    const rotation = options.rotation ?? 0
+    // A place the caller chose is used as it is. Without one, the item goes to the free place
+    // nearest the middle of the view, so that it does not land on top of something else.
+    const placed = options.position
+      ? placeItem({ position: options.position, rotation }, size, this.floorplan, this.placement)
+      : findFreeSpot(
+          { position: this.viewCentre(), rotation },
+          size,
+          this.floorplan,
+          this.catalog.sizeOf,
+          this.placement,
+        )
     const id = this.floorplan.addItem({
       catalogKey,
       position: placed.position,
@@ -210,6 +234,7 @@ export class FloorplanEngine {
     for (const cleanup of this.cleanups) cleanup()
     this.editor?.dispose()
     this.view3d.dispose()
+    this.history.dispose()
     this.emitter.clear()
   }
 

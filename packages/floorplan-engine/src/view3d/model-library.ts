@@ -16,19 +16,17 @@ import type { ItemSize } from '../schema/item-definition.js'
 export type ModelLoader = (url: string) => Promise<Object3D>
 
 /**
- * A loader for GLB and glTF files. The Draco decoder is fetched from `dracoPath` only if a model
- * is compressed with it.
+ * A loader for GLB and glTF files, including ones compressed with Draco. The Draco decoder is
+ * fetched only if a model needs it: from `dracoPath` when that is given, else from the copy
+ * that comes with Three.js, which the app's bundler serves.
  */
 export function createGltfLoader(dracoPath?: string): { load: ModelLoader; dispose: () => void } {
-  const gltf = new GLTFLoader()
-  let draco: DRACOLoader | null = null
-  if (dracoPath) {
-    draco = new DRACOLoader().setDecoderPath(dracoPath)
-    gltf.setDRACOLoader(draco)
-  }
+  const draco = new DRACOLoader()
+  if (dracoPath) draco.setDecoderPath(dracoPath)
+  const gltf = new GLTFLoader().setDRACOLoader(draco)
   return {
     load: async (url) => (await gltf.loadAsync(url)).scene,
-    dispose: () => draco?.dispose(),
+    dispose: () => draco.dispose(),
   }
 }
 

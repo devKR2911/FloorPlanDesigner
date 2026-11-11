@@ -173,6 +173,8 @@ export class ItemScene {
     root.userData = { kind: 'item', id: item.id } satisfies ItemObjectData
 
     const content = new Mesh(boxGeometry(size), this.placeholderMaterial)
+    content.castShadow = true
+    content.receiveShadow = true
     const outline = new LineSegments(new EdgesGeometry(boxGeometry(size, 0.02)))
     outline.visible = false
     // The outline is only a marker; pointer picking goes by the item's own shape.
@@ -202,6 +204,11 @@ export class ItemScene {
         const placeholder = entry.content as Mesh
         placeholder.geometry.dispose()
         entry.root.remove(placeholder)
+        // Set on this copy: whether an object casts a shadow is not shared with the template.
+        model.traverse((child) => {
+          child.castShadow = true
+          child.receiveShadow = true
+        })
         entry.root.add(model)
         entry.content = model
         entry.placeholder = false

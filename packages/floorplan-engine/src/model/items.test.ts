@@ -8,7 +8,7 @@ import {
   itemOutline,
   normalizeAngle,
 } from './item-geometry.js'
-import { placeItem } from './placement.js'
+import { findFreeSpot, placeItem } from './placement.js'
 
 const sofa = { width: 2, height: 0.9, depth: 0.8 }
 const chair = { width: 0.4, height: 0.9, depth: 0.4 }
@@ -52,9 +52,10 @@ describe('Floorplan items', () => {
     expect(fp.getItem(id)!.rotation).toBeCloseTo(Math.PI / 2)
     fp.removeItem(id)
     expect(fp.items).toEqual([])
+    // The update names the item it edited, so that undo can join a run of edits to it.
     expect(changes).toEqual([
       { kind: 'items', roomsChanged: false },
-      { kind: 'items', roomsChanged: false },
+      { kind: 'items', roomsChanged: false, target: id },
       { kind: 'items', roomsChanged: false },
     ])
   })
@@ -238,5 +239,50 @@ describe('placeItem', () => {
       grid: 0.1,
     })
     expect(result).toEqual({ position: { x: 2.03, y: 2.35 }, rotation: 0.4, walls: [] })
+  })
+})
+
+describe('findFreeSpot', () => {
+  const free = (fp: Floorplan, id: string) => !findOverlaps(fp, sizeOf).has(id)
+
+  it('uses the requested place when it is free', () => {
+    const spot = findFreeSpot({ position: { x: 2, y: 1.5 }, rotation: 0 }, chair, room(), sizeOf)
+    expect(spot.position).toEqual({ x: 2, y: 1.5 })
+  })
+
+  it('moves a new item off an item that is already there', () => {
+    const fp = room()
+    fp.addItem({ catalogKey: 'chair', position: { x: 2, y: 1.5 } })
+    const spot = findFreeSpot({ position: { x: 2, y: 1.5 }, rotation: 0 }, chair, fp, sizeOf)
+    const second = fp.addItem({ catalogKey: 'chair', ...spot })
+    expect(free(fp, second)).toBe(true)
+    // The nearest ring that clears a 0.4 m chair is 0.6 m out.
+    expect(Math.hypot(spot.position.x - 2, spot.position.y - 1.5)).toBeLessThan(0.7)
+  })
+
+  it('finds room for several of the same item in turn', () => {
+    const fp = room()
+    for (let i = 0; i < 6; i++) {
+      const spot = findFreeSpot({ position: { x: 2, y: 1.5 }, rotation: 0 }, chair, fp, sizeOf)
+      fp.addItem({ catalogKey: 'chair', ...spot })
+    }
+    expect(findOverlaps(fp, sizeOf).size).toBe(0)
+  })
+
+  it('keeps a new item out of the walls', () => {
+    const fp = room()
+    // Asked for on top of the south wall.
+    const spot = findFreeSpot({ position: { x: 2, y: 0 }, rotation: 0 }, sofa, fp, sizeOf)
+    const id = fp.addItem({ catalogKey: 'sofa', ...spot })
+    expect(free(fp, id)).toBe(true)
+  })
+
+  it('falls back to the requested place when nothing is free within reach', () => {
+    const fp = new Floorplan()
+    // One item far larger than the area searched.
+    fp.addItem({ catalogKey: 'huge', position: { x: 0, y: 0 } })
+    const huge = { width: 40, height: 1, depth: 40 }
+    const spot = findFreeSpot({ position: { x: 0, y: 0 }, rotation: 0 }, chair, fp, () => huge)
+    expect(spot.position).toEqual({ x: 0, y: 0 })
   })
 })

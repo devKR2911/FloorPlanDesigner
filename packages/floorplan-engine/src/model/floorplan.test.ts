@@ -330,7 +330,8 @@ describe('change events', () => {
     fp.addWall(b, c)
     fp.addWall(c, a)
     fp.moveCorner(c, 4, 5)
-    fp.updateWall(fp.walls[0]!.id, { height: 3 })
+    const edited = fp.walls[0]!.id
+    fp.updateWall(edited, { height: 3 })
     fp.load(createEmptyPlan())
 
     expect(changes).toEqual([
@@ -341,7 +342,7 @@ describe('change events', () => {
       { kind: 'walls', roomsChanged: false },
       { kind: 'walls', roomsChanged: true },
       { kind: 'corners', roomsChanged: false },
-      { kind: 'walls', roomsChanged: false },
+      { kind: 'walls', roomsChanged: false, target: edited },
       { kind: 'load', roomsChanged: true },
     ])
   })

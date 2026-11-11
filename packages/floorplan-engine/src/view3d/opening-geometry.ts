@@ -51,6 +51,9 @@ export function buildOpeningObject(
     const geometry = new BoxGeometry(...size)
     geometry.translate(...centre)
     const mesh = new Mesh(geometry, materials[part])
+    // Frames and door leaves cast shadows; glass lets the light through.
+    mesh.castShadow = part === 'frame' || part === 'leaf'
+    mesh.receiveShadow = mesh.castShadow
     mesh.userData = { part } satisfies OpeningPartData
     return mesh
   }

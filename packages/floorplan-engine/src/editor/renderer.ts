@@ -1,6 +1,7 @@
 import type { Floorplan } from '../model/floorplan.js'
 import { distance, type Point } from '../model/geometry.js'
 import { itemOutline } from '../model/item-geometry.js'
+import { wallFootprints } from '../model/wall-footprints.js'
 import { openingOutline } from '../model/wall-openings.js'
 import type { Opening } from '../schema/plan.js'
 import type { ItemSize } from '../schema/item-definition.js'
@@ -226,13 +227,28 @@ function drawRotateHandle(ctx: CanvasRenderingContext2D, state: RenderState): vo
 
 function drawWalls(ctx: CanvasRenderingContext2D, state: RenderState): void {
   const { floorplan, viewport, theme, hover, selection } = state
+  // Each wall's outline once it is joined to its neighbours, so corners close without a notch.
+  const footprints = new Map(
+    wallFootprints(floorplan.corners, floorplan.walls).map((footprint) => [
+      footprint.wallId,
+      footprint.polygon,
+    ]),
+  )
   for (const wall of floorplan.walls) {
     const start = floorplan.getCorner(wall.start)!
     const end = floorplan.getCorner(wall.end)!
     const selected = selection?.kind === 'wall' && selection.id === wall.id
     const hovered = hover?.kind === 'wall' && hover.id === wall.id
     ctx.fillStyle = selected ? theme.wallSelected : hovered ? theme.wallHover : theme.wall
-    tracePolygon(ctx, wallBand(start, end, wall.thickness, viewport))
+    const footprint = footprints.get(wall.id)
+    // Zoomed far out, a wall is drawn as a band of a least width so that it stays visible.
+    const tooThin = wall.thickness * viewport.scale < MIN_WALL_PIXELS
+    tracePolygon(
+      ctx,
+      footprint && !tooThin
+        ? footprint.map((point) => viewport.toScreen(point))
+        : wallBand(start, end, wall.thickness, viewport),
+    )
     ctx.fill()
   }
 }

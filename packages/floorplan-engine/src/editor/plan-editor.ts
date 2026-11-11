@@ -2,6 +2,7 @@ import { Emitter, type Listener } from '../core/events.js'
 import type { SelectionStore } from '../core/selection.js'
 import type { Floorplan } from '../model/floorplan.js'
 import { boundingBox } from '../model/geometry.js'
+import type { History } from '../model/history.js'
 import { ItemCatalog } from '../model/item-catalog.js'
 import { findOverlaps } from '../model/item-geometry.js'
 import type { PlacementSettings } from '../model/placement.js'
@@ -26,6 +27,8 @@ export interface PlanEditorOptions {
   placement?: PlacementSettings
   /** Snapping for doors and windows dragged along a wall. */
   openingSnap?: OpeningSnapSettings
+  /** Undo history, so that one drag is one step to undo. */
+  history?: Pick<History, 'begin' | 'end'>
 }
 
 export type PlanEditorEvents = {
@@ -79,6 +82,7 @@ export class PlanEditor {
       ...(options.selection && { selection: options.selection }),
       ...(options.placement && { placement: options.placement }),
       ...(options.openingSnap && { openingSnap: options.openingSnap }),
+      ...(options.history && { history: options.history }),
     })
 
     this.cleanups.push(

@@ -1,7 +1,14 @@
 import type { ItemSize } from '../schema/item-definition.js'
 import type { Floorplan } from './floorplan.js'
 import { EPSILON, type Point } from './geometry.js'
-import { itemAxes, normalizeAngle, type ItemPose } from './item-geometry.js'
+import {
+  convexPolygonsOverlap,
+  itemAxes,
+  itemOutline,
+  normalizeAngle,
+  wallRectangle,
+  type ItemPose,
+} from './item-geometry.js'
 
 export interface PlacementSettings {
   /** Master switch. Off, the requested pose is used as it is. */
@@ -90,6 +97,55 @@ export function placeItem(
     rotation: snappedRotation,
     walls: side ? [back.face.wallId, side.face.wallId] : [back.face.wallId],
   }
+}
+
+/** How far apart the rings of places tried by `findFreeSpot()` are, in metres. */
+const SEARCH_STEP = 0.3
+/** How far from the requested place `findFreeSpot()` looks, in metres. */
+const SEARCH_REACH = 6
+/** How many places are tried on each ring. */
+const SEARCH_DIRECTIONS = 12
+
+/**
+ * Where a new item goes so that it overlaps no wall and no other item: the requested place if
+ * it is free, else the nearest free place found on rings around it. Every place tried goes
+ * through `placeItem()`, so the result is snapped like a dragged item. If nothing free is found
+ * within reach, the requested place is used after all.
+ */
+export function findFreeSpot(
+  request: ItemPose,
+  size: Pick<ItemSize, 'width' | 'depth'>,
+  floorplan: Pick<Floorplan, 'walls' | 'getCorner' | 'items'>,
+  sizeOf: (catalogKey: string) => Pick<ItemSize, 'width' | 'depth'>,
+  settings: PlacementSettings = defaultPlacementSettings,
+): PlacementResult {
+  const obstacles: Point[][] = floorplan.items.map((item) =>
+    itemOutline(item, sizeOf(item.catalogKey)),
+  )
+  for (const wall of floorplan.walls) {
+    const start = floorplan.getCorner(wall.start)
+    const end = floorplan.getCorner(wall.end)
+    if (start && end) obstacles.push(wallRectangle(start, end, wall.thickness))
+  }
+  const tryAt = (position: Point): PlacementResult | null => {
+    const placed = placeItem({ position, rotation: request.rotation }, size, floorplan, settings)
+    const outline = itemOutline(placed, size)
+    return obstacles.some((obstacle) => convexPolygonsOverlap(outline, obstacle)) ? null : placed
+  }
+
+  const first = tryAt(request.position)
+  if (first) return first
+  for (let radius = SEARCH_STEP; radius <= SEARCH_REACH; radius += SEARCH_STEP) {
+    for (let i = 0; i < SEARCH_DIRECTIONS; i++) {
+      const angle = (i / SEARCH_DIRECTIONS) * Math.PI * 2
+      const found = tryAt({
+        x: request.position.x + Math.cos(angle) * radius,
+        y: request.position.y + Math.sin(angle) * radius,
+      })
+      if (found) return found
+    }
+  }
+  return placeItem(request, size, floorplan, settings)
 }
 
 /** Both faces of every wall. */

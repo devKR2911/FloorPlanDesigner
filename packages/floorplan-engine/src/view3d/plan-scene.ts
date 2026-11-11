@@ -178,6 +178,8 @@ export class PlanScene {
             }
           : undefined
       const mesh = new Mesh(buildWallGeometry(footprint, wall.height, cut), this.wallMaterial)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
       mesh.userData = { kind: 'wall', id: wall.id, height: wall.height } satisfies WallMeshData
       this.wallGroup.add(mesh)
 
@@ -198,6 +200,7 @@ export class PlanScene {
     this.applySelection()
     for (const room of floorplan.rooms) {
       const mesh = new Mesh(buildFloorGeometry(room.polygon), this.floorMaterial)
+      mesh.receiveShadow = true
       mesh.userData = { kind: 'floor', id: room.id } satisfies FloorMeshData
       this.floorGroup.add(mesh)
     }

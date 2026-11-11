@@ -4,10 +4,13 @@ import {
   DirectionalLight,
   Euler,
   GridHelper,
+  Mesh,
   PerspectiveCamera,
+  PlaneGeometry,
   Quaternion,
   Raycaster,
   Scene,
+  ShadowMaterial,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -17,6 +20,7 @@ import { Emitter, type Listener } from '../core/events.js'
 import { SelectionStore } from '../core/selection.js'
 import { FloorplanError, type Floorplan } from '../model/floorplan.js'
 import { boundingBox, type Point } from '../model/geometry.js'
+import type { History } from '../model/history.js'
 import { ItemCatalog } from '../model/item-catalog.js'
 import { defaultPlacementSettings, placeItem, type PlacementSettings } from '../model/placement.js'
 import { moveWalker, wallBlocks, type WallBlock } from '../model/walk-collision.js'
@@ -93,10 +97,14 @@ export interface View3DOptions {
   placement?: PlacementSettings
   /** Snapping for doors and windows dragged along a wall. */
   openingSnap?: OpeningSnapSettings
+  /** Undo history, so that one drag is one step to undo. */
+  history?: Pick<History, 'begin' | 'end'>
   /** Where the Draco decoder files are served, for compressed models. */
   dracoPath?: string
   /** Replaces the GLB loader, for tests. */
   loadModel?: ModelLoader
+  /** Whether the sun casts shadows. On unless set to `false`. */
+  shadows?: boolean
 }
 
 export type View3DEvents = {
@@ -121,6 +129,12 @@ const CAMERA_MOVE_SECONDS = 0.4
 /** The longest step a single frame may take, so a stalled tab does not jump the walker. */
 const MAX_FRAME_SECONDS = 0.1
 const DEFAULT_CAMERA_POSITION = new Vector3(8, 8, 10)
+/** Where the sun shines from, as a direction from the plan towards it. */
+const SUN_DIRECTION = new Vector3(6, 12, 8).normalize()
+/** How far past the plan shadows are still drawn, in metres. */
+const SHADOW_MARGIN = 3
+/** Side length of the square that shows shadows on the ground outside the rooms, in metres. */
+const GROUND_SIZE = 400
 
 /**
  * The 3D view of a `Floorplan`: walls and floors, lit, with an orbit camera and a walk-through
@@ -136,6 +150,7 @@ export class View3D {
   readonly selection: SelectionStore
   readonly placement: PlacementSettings
   readonly openingSnap: OpeningSnapSettings
+  private readonly history: Pick<History, 'begin' | 'end'> | undefined
 
   private readonly host: HTMLElement
   private readonly floorplan: Floorplan
@@ -150,6 +165,8 @@ export class View3D {
   private readonly emitter = new Emitter<View3DEvents>()
   private readonly cleanups: (() => void)[] = []
   private grid: GridHelper
+  private readonly sun = new DirectionalLight(0xffffff, 2)
+  private readonly ground: Mesh
 
   private mode: CameraMode = 'orbit'
   private walk: WalkState = { x: 0, y: 0, yaw: 0, pitch: 0 }
@@ -183,9 +200,11 @@ export class View3D {
     this.selection = options.selection ?? new SelectionStore()
     this.placement = options.placement ?? { ...defaultPlacementSettings }
     this.openingSnap = options.openingSnap ?? { ...defaultOpeningSnapSettings }
+    this.history = options.history
 
     this.renderer = new WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.renderer.shadowMap.enabled = options.shadows !== false
     this.canvas = this.renderer.domElement
     this.canvas.tabIndex = 0
     this.canvas.style.display = 'block'
@@ -197,9 +216,24 @@ export class View3D {
 
     this.scene.background = new Color(this.theme.background)
     this.scene.add(new AmbientLight(0xffffff, 1.1))
-    const sun = new DirectionalLight(0xffffff, 2)
-    sun.position.set(6, 12, 8)
-    this.scene.add(sun)
+    this.sun.castShadow = true
+    this.sun.shadow.mapSize.set(2048, 2048)
+    // Enough to stop a lit face from shadowing itself in stripes, little enough that a shadow
+    // still starts at the foot of the wall that casts it.
+    this.sun.shadow.bias = -0.0004
+    this.sun.shadow.normalBias = 0.03
+    this.scene.add(this.sun, this.sun.target)
+    // The ground outside the rooms is not a surface of the plan. This shows shadows on it and
+    // nothing else, a little under the floors and over the grid.
+    const ground = new Mesh(
+      new PlaneGeometry(GROUND_SIZE, GROUND_SIZE).rotateX(-Math.PI / 2),
+      new ShadowMaterial({ opacity: 0.16 }),
+    )
+    ground.position.y = GRID_HEIGHT / 2
+    ground.receiveShadow = true
+    this.ground = ground
+    this.scene.add(ground)
+    this.aimSun()
     // A weaker light from the other side, so walls facing away from the sun are not all one tone.
     const fill = new DirectionalLight(0xffffff, 0.6)
     fill.position.set(-8, 6, -5)
@@ -243,6 +277,7 @@ export class View3D {
 
     this.cleanups.push(
       this.planScene.on('rebuild', () => {
+        this.aimSun()
         this.updateGrid()
         this.invalidate()
       }),
@@ -310,6 +345,7 @@ export class View3D {
     this.mode = mode
     this.heldKeys.clear()
     this.lookDrag = null
+    if (this.itemDrag || this.openingDrag) this.history?.end()
     this.itemDrag = null
     this.openingDrag = null
     this.press = null
@@ -364,6 +400,9 @@ export class View3D {
     this.controls.dispose()
     this.planScene.dispose()
     this.itemScene.dispose()
+    this.ground.geometry.dispose()
+    ;(this.ground.material as ShadowMaterial).dispose()
+    this.sun.shadow.dispose()
     this.library.dispose()
     this.disposeLoader()
     this.grid.dispose()
@@ -574,6 +613,32 @@ export class View3D {
     return this.walkBlocks
   }
 
+  /**
+   * Points the sun at the plan and sizes the area it casts shadows over to cover it. The sun
+   * always shines from the same direction; only where it stands changes.
+   */
+  private aimSun(): void {
+    const bounds = boundingBox(this.floorplan.corners)
+    const centre = bounds
+      ? { x: (bounds.min.x + bounds.max.x) / 2, y: (bounds.min.y + bounds.max.y) / 2 }
+      : { x: 0, y: 0 }
+    const height = Math.max(0, ...this.floorplan.walls.map((wall) => wall.height))
+    const reach =
+      (bounds ? Math.hypot(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y) / 2 : 0) +
+      height +
+      SHADOW_MARGIN
+    const { sun } = this
+    sun.target.position.set(...toScene(centre))
+    sun.position.copy(sun.target.position).addScaledVector(SUN_DIRECTION, reach * 2)
+    sun.target.updateMatrixWorld()
+    const camera = sun.shadow.camera
+    camera.left = camera.bottom = -reach
+    camera.right = camera.top = reach
+    camera.near = 0.1
+    camera.far = reach * 4
+    camera.updateProjectionMatrix()
+  }
+
   // The grid
 
   private createGrid(size: number): GridHelper {
@@ -626,6 +691,7 @@ export class View3D {
       this.controls.enabled = false
       this.canvas.setPointerCapture(event.pointerId)
       this.openingDrag = { pointerId: event.pointerId, id: picked.id, grab: opening.offset - along }
+      this.history?.begin()
       this.canvas.style.cursor = 'grabbing'
       return
     }
@@ -636,6 +702,7 @@ export class View3D {
     this.controls.enabled = false
     this.canvas.setPointerCapture(event.pointerId)
     this.selection.set({ kind: 'item', id })
+    this.history?.begin()
     this.itemDrag = {
       pointerId: event.pointerId,
       id,
@@ -726,6 +793,7 @@ export class View3D {
     ) {
       this.itemDrag = null
       this.openingDrag = null
+      this.history?.end()
       this.controls.enabled = true
       if (this.canvas.hasPointerCapture(event.pointerId)) {
         this.canvas.releasePointerCapture(event.pointerId)

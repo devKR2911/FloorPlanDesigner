@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Floorplan } from '../model/floorplan.js'
+import { History } from '../model/history.js'
 import type { Point } from '../model/geometry.js'
 import { Interaction, type PointerInput } from './interaction.js'
 import { defaultSnapSettings } from './snapping.js'
@@ -262,5 +263,61 @@ describe('common behaviour', () => {
     interaction.pointerCancel()
     expect(floorplan.corners).toHaveLength(3)
     expect(interaction.hover).toBeNull()
+  })
+})
+
+describe('undo steps', () => {
+  let history: History
+
+  beforeEach(() => {
+    history = new History(floorplan)
+    interaction = new Interaction(floorplan, viewport, { ...defaultSnapSettings }, { history })
+  })
+
+  it('makes each wall drawn one step, with its corners', () => {
+    interaction.mode = 'draw'
+    click(0, 0)
+    click(4, 0)
+    click(4, 4)
+    expect(floorplan.walls).toHaveLength(2)
+
+    history.undo()
+    expect(floorplan.walls).toHaveLength(1)
+    expect(floorplan.corners).toHaveLength(2)
+    history.undo()
+    // The first click placed only a corner, which is a step of its own.
+    expect(floorplan.walls).toHaveLength(0)
+    expect(floorplan.corners).toHaveLength(1)
+  })
+
+  it('ends the chain being drawn when a step is undone', () => {
+    interaction.mode = 'draw'
+    click(0, 0)
+    click(4, 0)
+    expect(interaction.drawing).toBe(true)
+    history.undo()
+    expect(interaction.drawing).toBe(false)
+    // The next click starts a new chain; it does not join to a corner that is gone.
+    click(2, 2)
+    expect(floorplan.walls).toHaveLength(0)
+  })
+
+  it('makes a whole corner drag one step, including the merge at its end', () => {
+    drawSquare()
+    while (history.canUndo && floorplan.walls.length < 4) history.redo()
+    const before = floorplan.export()
+    drag({ x: 4, y: 4 }, { x: 3, y: 3 }, { x: 2, y: 2 }, { x: 0, y: 4 })
+    expect(floorplan.corners).toHaveLength(3)
+
+    history.undo()
+    expect(floorplan.export()).toEqual(before)
+  })
+
+  it('records nothing for a click that only selects, or a drag that only pans', () => {
+    drawSquare()
+    const position = history.position
+    click(2, 0)
+    drag({ x: 2, y: 2 }, { x: 3, y: 3 })
+    expect(history.position).toBe(position)
   })
 })

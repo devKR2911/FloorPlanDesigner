@@ -2,6 +2,7 @@ import { Emitter, type Listener } from '../core/events.js'
 import { SelectionStore, sameSelection, type Selection } from '../core/selection.js'
 import { Floorplan, FloorplanError } from '../model/floorplan.js'
 import { distance, type Point } from '../model/geometry.js'
+import type { History } from '../model/history.js'
 import { ItemCatalog } from '../model/item-catalog.js'
 import { defaultPlacementSettings, placeItem, type PlacementSettings } from '../model/placement.js'
 import {
@@ -28,6 +29,8 @@ export interface InteractionOptions {
   placement?: PlacementSettings
   /** Snapping for doors and windows dragged along a wall. */
   openingSnap?: OpeningSnapSettings
+  /** Undo history. Each press-to-release is marked on it, so one drag is one step to undo. */
+  history?: Pick<History, 'begin' | 'end'>
 }
 
 /** A dragged opening jumps to another wall when the pointer comes this close to it. Metres. */
@@ -100,7 +103,9 @@ export class Interaction {
   readonly openingSnap: OpeningSnapSettings
 
   private readonly selectionStore: SelectionStore
+  private readonly history: Pick<History, 'begin' | 'end'> | undefined
   private readonly stopWatchingSelection: () => void
+  private readonly stopWatchingFloorplan: () => void
   private currentMode: EditorMode = 'move'
   private currentHover: Hit = null
   private handleHover = false
@@ -122,6 +127,11 @@ export class Interaction {
     this.placement = options.placement ?? { ...defaultPlacementSettings }
     this.openingSnap = options.openingSnap ?? { ...defaultOpeningSnapSettings }
     this.selectionStore = options.selection ?? new SelectionStore()
+    this.history = options.history
+    // An earlier state put back by undo may not have the corner the chain was drawn from.
+    this.stopWatchingFloorplan = floorplan.on('change', ({ kind }) => {
+      if (kind === 'restore' || kind === 'load') this.endChain()
+    })
     this.stopWatchingSelection = this.selectionStore.on('change', (selection) => {
       this.emitter.emit('selection', selection)
       this.invalidate()
@@ -131,6 +141,7 @@ export class Interaction {
   /** Stops following the shared selection. */
   dispose(): void {
     this.stopWatchingSelection()
+    this.stopWatchingFloorplan()
     this.emitter.clear()
   }
 
@@ -193,6 +204,8 @@ export class Interaction {
       return
     }
     if (input.button !== undefined && input.button !== 0) return
+    // Whatever this press goes on to change, until it is released, is one step to undo.
+    this.history?.begin()
     const handle = this.currentMode === 'move' && this.isOnRotateHandle(input.world)
     const hit = this.currentMode === 'draw' || handle ? null : this.hitAt(input.world)
     this.gesture = { type: 'pending', start: input, hit, handle }
@@ -297,6 +310,7 @@ export class Interaction {
       this.select(this.floorplan.getWall(gesture.id) ? { kind: 'wall', id: gesture.id } : null)
     }
     // An item drag or turn has nothing left to apply: every move already went to the model.
+    this.history?.end()
     this.updateHover(input)
     this.invalidate()
   }
@@ -312,6 +326,7 @@ export class Interaction {
         if (this.floorplan.getCorner(id)) this.floorplan.resolveCorner(id)
       }
     }
+    if (gesture.type !== 'idle') this.history?.end()
     this.setHover(null)
     this.invalidate()
   }

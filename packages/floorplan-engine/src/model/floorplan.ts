@@ -53,15 +53,21 @@ export interface Room {
   readonly centroid: Point
 }
 
-export type FloorplanChangeKind = 'load' | 'corners' | 'walls' | 'items' | 'openings'
+export type FloorplanChangeKind = 'load' | 'restore' | 'corners' | 'walls' | 'items' | 'openings'
 
 export interface FloorplanChange {
   /**
    * `walls` when the set of walls changed (corners may have changed too), `corners` when only
    * corners did, `items` when only items did, and `openings` when only doors or windows did.
    * A `corners` or `walls` change may also move the openings on the walls it touched.
+   * `load` is a new plan; `restore` is an earlier state of the same plan put back, by undo.
    */
   kind: FloorplanChangeKind
+  /**
+   * The id of the wall, item or opening whose own values were edited, when the change was such
+   * an edit. Undo uses it to join a run of edits to one thing into one step.
+   */
+  target?: string
   /** True when the set of rooms changed. A room that only changed shape keeps its id and does not count. */
   roomsChanged: boolean
 }
@@ -183,6 +189,19 @@ export class Floorplan {
    * the current plan in place in that case.
    */
   load(input: unknown): void {
+    this.replace(input, 'load')
+  }
+
+  /**
+   * Puts back an earlier state of this plan, as undo and redo do. It differs from `load()` only
+   * in how the change is reported: as `restore`, so views redraw without treating it as a new
+   * plan.
+   */
+  restore(input: unknown): void {
+    this.replace(input, 'restore')
+  }
+
+  private replace(input: unknown, kind: 'load' | 'restore'): void {
     const plan = planSchema.parse(input)
     this.cornerMap.clear()
     this.wallMap.clear()
@@ -192,7 +211,7 @@ export class Floorplan {
     for (const item of structuredClone(plan.items)) this.itemMap.set(item.id, item)
     this.openingMap.clear()
     for (const opening of plan.openings) this.openingMap.set(opening.id, { ...opening })
-    this.commit('load')
+    this.commit(kind)
   }
 
   /** A copy of the plan, ready to be saved as JSON. */
@@ -330,7 +349,7 @@ export class Floorplan {
     const wall = this.requireWall(id)
     if (changes.thickness !== undefined) wall.thickness = positive(changes.thickness, 'thickness')
     if (changes.height !== undefined) wall.height = positive(changes.height, 'height')
-    this.commit('walls')
+    this.commit('walls', id)
   }
 
   /**
@@ -366,7 +385,7 @@ export class Floorplan {
       item.rotation = normalizeAngle(finite(changes.rotation, 'rotation'))
     }
     if (changes.elevation !== undefined) item.elevation = nonNegative(changes.elevation)
-    this.commit('items')
+    this.commit('items', id)
   }
 
   removeItem(id: string): void {
@@ -428,7 +447,7 @@ export class Floorplan {
     candidate.offset = this.fitOpening(candidate)
     Object.assign(opening, candidate)
     this.anchorOpening(opening)
-    this.commit('openings')
+    this.commit('openings', id)
   }
 
   removeOpening(id: string): void {
@@ -484,7 +503,8 @@ export class Floorplan {
    */
   private rehomeOpenings(kind: FloorplanChangeKind): void {
     if (this.openingMap.size === 0) return
-    if (kind !== 'load') {
+    // A loaded or restored plan is taken as it is; only an edit moves openings to follow walls.
+    if (kind !== 'load' && kind !== 'restore') {
       for (const opening of [...this.openingMap.values()]) {
         const anchor = this.openingAnchors.get(opening.id)
         if (!anchor) continue
@@ -660,17 +680,19 @@ export class Floorplan {
     }
   }
 
-  private commit(kind: FloorplanChangeKind): void {
+  private commit(kind: FloorplanChangeKind, target?: string): void {
+    const change = (roomsChanged: boolean): FloorplanChange =>
+      target === undefined ? { kind, roomsChanged } : { kind, roomsChanged, target }
     // Items and openings never change the walls, so the rooms stay as they are.
     if (kind === 'items' || kind === 'openings') {
-      this.emitter.emit('change', { kind, roomsChanged: false })
+      this.emitter.emit('change', change(false))
       return
     }
     this.rehomeOpenings(kind)
     const previousRoomIds = this.roomList.map((room) => room.id).join('|')
     this.recomputeRooms()
     const roomsChanged = previousRoomIds !== this.roomList.map((room) => room.id).join('|')
-    this.emitter.emit('change', { kind, roomsChanged })
+    this.emitter.emit('change', change(roomsChanged))
   }
 
   private recomputeRooms(): void {
