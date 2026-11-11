@@ -63,6 +63,14 @@ describe('health', () => {
   })
 })
 
+/**
+ * Waits long enough for the clock to move on, so plans changed one after the other get different
+ * times. Without it two quick changes can share a millisecond and the list order is arbitrary.
+ */
+function tick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 5))
+}
+
 describe('creating and reading plans', () => {
   it('starts with no plans', async () => {
     expect(await list()).toEqual([])
@@ -91,10 +99,12 @@ describe('creating and reading plans', () => {
 
   it('lists plans without their documents, the most recently changed first', async () => {
     const first = await create('First', { thumbnail: png })
+    await tick()
     const second = await create('Second')
     expect((await list()).map((plan) => plan.name)).toEqual(['Second', 'First'])
 
     // Renaming the older plan makes it the most recently changed.
+    await tick()
     await send('PATCH', `/${first.id}`, { name: 'First, renamed' })
     const plansNow = await list()
     expect(plansNow.map((plan) => plan.id)).toEqual([first.id, second.id])
