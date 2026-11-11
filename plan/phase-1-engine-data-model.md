@@ -1,8 +1,32 @@
 # Phase 1: engine data model
 
-Status: planned on 2026-11-11, awaiting go-ahead. Nothing has been implemented.
+Status: done. Planned and implemented on 2026-11-11, not yet committed.
 
 Back to the [project plan](project-setup-plan.md).
+
+## Result
+
+All six steps are done. About 1,500 lines were added to the engine package, 780 of them tests; the estimate was 800 to 1,200.
+
+### What was checked
+
+- `pnpm typecheck`, `pnpm test` (96 tests, 83 in the engine), `pnpm lint`, `pnpm format:check` and `pnpm build` pass.
+- The new `build.test.ts` follows the imports of the built `schema.js` and `model.js` and confirms neither reaches `three`, and that `index.js` imports `three` without bundling it.
+- In headless Chrome, a plan with two rooms sharing a wall was loaded through `FloorplanEngine`, round-tripped unchanged through `export()`, and `engine.floorplan.rooms` listed both rooms counter-clockwise with the shared wall reporting a room on each side.
+- The Phase 0 browser check still passes: grid, orbit, save, update, reload.
+
+### Where the result differs from the plan
+
+- **Duplicate walls are now rejected by the plan schema** as well as by the model, so a loaded plan can never hold two walls between the same corners. Room detection relies on this.
+- **Change events** carry `{ kind: 'load' | 'corners' | 'walls', roomsChanged }` rather than a separate `rooms` kind: `roomsChanged` is true when the set of room ids changed.
+- **A corner dropped on a wall moves perpendicular onto it**, not to the nearest corner-like position, so a wall stays straight after a split.
+- **A split keeps the shortened wall's id** and creates one new wall for the other half, so an editor selection survives a split.
+- **Room ids** collide only when the plan is not planar (walls crossing without a corner); then a `#2` suffix keeps them unique. Non-planar plans are otherwise unsupported, as planned.
+- **The engine's typecheck includes Node types** for the build test; the published declaration build sets `types: []` so no Node globals leak into the library.
+
+### Open questions, as decided
+
+Orphan corners are removed, rooms inside rooms are reported without a hole, and the defaults are 0.15 m thickness, 2.5 m height and 0.05 m tolerance.
 
 ## Goal
 
