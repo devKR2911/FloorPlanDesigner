@@ -199,3 +199,7 @@ The defaults below will be implemented unless you say otherwise.
 4. **Preview pictures are stored with each plan.** Leaving them out saves the migration and about 250 lines, and the list would show names and dates only.
 5. **Duplicate is included.** It is a small addition on top of create.
 6. **Renaming in the editor saves at once,** separately from the drawing.
+
+## Later changes
+
+- **2026-11-12: the plan list picture is the 3D view, not the 2D drawing.** `engine.view3d.snapshot()` draws the plan the way the orbit view shows it (walls facing the camera lowered, no grid or selection) to a 320 × 200 JPEG at 2×, which works while the 3D view is hidden and leaves it as it was. The 2D `editor.snapshot()` remains as the fallback when the 3D picture cannot be drawn. Thumbnails may now be PNG or JPEG data URLs.

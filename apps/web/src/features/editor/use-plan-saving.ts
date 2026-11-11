@@ -62,7 +62,11 @@ export function usePlanSaving(engine: FloorplanEngine | null, planId: string, po
         await mutateAsync({
           id: planId,
           document: engine.export(),
-          thumbnail: engine.editor?.snapshot(THUMBNAIL_SIZE) ?? null,
+          // The 3D view's picture, or the 2D plan's if the 3D one cannot be drawn.
+          thumbnail:
+            engine.view3d.snapshot(THUMBNAIL_SIZE) ??
+            engine.editor?.snapshot(THUMBNAIL_SIZE) ??
+            null,
         })
         saved.current = savingPosition
         setSavedPosition(savingPosition)
