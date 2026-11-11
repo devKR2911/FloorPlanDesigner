@@ -1,7 +1,9 @@
 import {
+  FloorplanError,
   createEmptyPlan,
   type CameraMode,
   type EditorMode,
+  type Floorplan,
   type FloorplanEngine,
   type Selection,
 } from '@floorplandesigner/engine'
@@ -25,10 +27,12 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { catalog, catalogItem } from '@/features/catalog/catalog'
 import { CatalogPanel } from '@/features/catalog/CatalogPanel'
+import type { OpeningPreset } from '@/features/catalog/openings'
 import { usePlans, useSavePlan } from '@/features/plans/queries'
 import { writePlanIdToUrl } from '@/lib/plan-url'
 import { EngineCanvas, type EditorView } from './EngineCanvas'
 import { ItemInspector } from './ItemInspector'
+import { OpeningInspector } from './OpeningInspector'
 import { WallInspector } from './WallInspector'
 
 interface EditorProps {
@@ -47,13 +51,13 @@ const CAMERA_MODES: { value: CameraMode; label: string; icon: typeof Rotate3d; h
     value: 'orbit',
     label: 'Orbit',
     icon: Rotate3d,
-    hint: 'Drag to orbit, right-drag to pan, scroll to zoom. Drag furniture to move it; R turns it, Delete removes it.',
+    hint: 'Drag to orbit, right-drag to pan, scroll to zoom. Drag furniture, doors and windows to move them; R turns an item, F flips a door.',
   },
   {
     value: 'walk',
     label: 'Walk',
     icon: Footprints,
-    hint: 'Drag to look around. Move with W A S D or the arrow keys, and hold Shift to go faster. Press Escape to leave.',
+    hint: 'Drag to look around. Move with W A S D or the arrow keys, and hold Shift to go faster. Walls stop you; doorways let you through. Escape leaves.',
   },
 ]
 
@@ -64,7 +68,7 @@ export function Editor({ initialPlan }: EditorProps) {
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit')
   const [selection, setSelection] = useState<Selection>(null)
   const [catalogOpen, setCatalogOpen] = useState(true)
-  const [itemError, setItemError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [planId, setPlanId] = useState(initialPlan?.id ?? null)
   const [name, setName] = useState(initialPlan?.name ?? 'Untitled plan')
   // Kept from the first render: later saves must not reload the plan over the working copy.
@@ -90,7 +94,7 @@ export function Editor({ initialPlan }: EditorProps) {
       engine.on('selection', setSelection),
       engine.on('itemError', ({ catalogKey }) => {
         const name = catalogItem(catalogKey)?.name ?? catalogKey
-        setItemError(`Could not load the model for “${name}”. It is shown as a box.`)
+        setNotice(`Could not load the model for “${name}”. It is shown as a box.`)
       }),
       engine.floorplan.on('change', bump),
     ]
@@ -129,15 +133,49 @@ export function Editor({ initialPlan }: EditorProps) {
 
   const selectedWall =
     selection?.kind === 'wall' ? (engine?.floorplan.getWall(selection.id) ?? null) : null
+  const selectedOpening =
+    selection?.kind === 'opening' ? (engine?.floorplan.getOpening(selection.id) ?? null) : null
   const selectedItem =
     selection?.kind === 'item' ? (engine?.floorplan.getItem(selection.id) ?? null) : null
+
+  /** Focuses the view showing, so the keys for the new selection work straight away. */
+  function focusView() {
+    const canvas = view === '2d' ? engine?.editor?.canvas : engine?.view3d.canvas
+    canvas?.focus({ preventScroll: true })
+  }
 
   function addItem(key: string) {
     if (!engine) return
     engine.addItem(key)
-    // Focus the view showing, so R and Delete work on the new item straight away.
-    const canvas = view === '2d' ? engine.editor?.canvas : engine.view3d.canvas
-    canvas?.focus({ preventScroll: true })
+    focusView()
+  }
+
+  function addOpening({ name, kind, width, height, sill }: OpeningPreset) {
+    if (!engine) return
+    try {
+      engine.addOpening({ kind, width, height, sill })
+      setNotice(null)
+      focusView()
+    } catch (error) {
+      if (!(error instanceof FloorplanError)) throw error
+      setNotice(
+        engine.floorplan.walls.length === 0
+          ? `Draw a wall first: a ${name.toLowerCase()} needs a wall to go in.`
+          : `No wall has room for a ${name.toLowerCase()}.`,
+      )
+    }
+  }
+
+  /** Applies a change to a door or window. Returns false, changing nothing, if it does not fit. */
+  function changeOpening(id: string, changes: Parameters<Floorplan['updateOpening']>[1]) {
+    if (!engine) return false
+    try {
+      engine.floorplan.updateOpening(id, changes)
+      return true
+    } catch (error) {
+      if (!(error instanceof FloorplanError)) throw error
+      return false
+    }
   }
 
   return (
@@ -232,8 +270,8 @@ export function Editor({ initialPlan }: EditorProps) {
               {mode === 'draw'
                 ? 'Click to place corners. Click the first corner, press Escape or double click to finish. Hold Alt to disable snapping.'
                 : mode === 'delete'
-                  ? 'Click a wall, corner or item to remove it.'
-                  : 'Drag corners, walls and furniture. R turns the selected item. Drag empty space to pan, scroll to zoom.'}
+                  ? 'Click a wall, corner, door, window or item to remove it.'
+                  : 'Drag corners, walls, doors, windows and furniture. R turns an item, F flips a door. Drag empty space to pan, scroll to zoom.'}
             </span>
             {selectedWall && (
               <WallInspector
@@ -272,6 +310,15 @@ export function Editor({ initialPlan }: EditorProps) {
           </>
         )}
 
+        {selectedOpening && engine && (
+          <OpeningInspector
+            key={selectedOpening.id}
+            opening={selectedOpening}
+            onChange={(changes) => changeOpening(selectedOpening.id, changes)}
+            onDelete={() => engine.floorplan.removeOpening(selectedOpening.id)}
+          />
+        )}
+
         {selectedItem && engine && (
           <ItemInspector
             key={selectedItem.id}
@@ -283,18 +330,18 @@ export function Editor({ initialPlan }: EditorProps) {
         )}
       </div>
 
-      {itemError && (
+      {notice && (
         <div
           role="alert"
           className="flex shrink-0 items-center gap-2 border-b bg-destructive/10 px-4 py-1.5 text-sm text-destructive"
         >
-          {itemError}
+          {notice}
           <Button
             variant="ghost"
             size="icon-sm"
             aria-label="Dismiss"
             className="ml-auto"
-            onClick={() => setItemError(null)}
+            onClick={() => setNotice(null)}
           >
             <X />
           </Button>
@@ -302,7 +349,9 @@ export function Editor({ initialPlan }: EditorProps) {
       )}
 
       <main className="flex min-h-0 flex-1">
-        {catalogOpen && <CatalogPanel onAdd={addItem} enabled={engine !== null} />}
+        {catalogOpen && (
+          <CatalogPanel onAdd={addItem} onAddOpening={addOpening} enabled={engine !== null} />
+        )}
         <div className="relative min-w-0 flex-1">
           <EngineCanvas view={view} onEngineChange={setEngine} className="absolute inset-0" />
         </div>
