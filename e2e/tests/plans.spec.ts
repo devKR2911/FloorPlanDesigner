@@ -25,8 +25,8 @@ test('a first plan: from the empty list to a saved drawing and back', async ({ p
   await expect(page).toHaveURL(/\/$/)
   const card = page.getByRole('listitem').filter({ hasText: 'Ground floor' })
   await expect(card.getByText(/^Changed/)).toBeVisible()
-  // The card shows the picture that was saved with the drawing.
-  await expect(card.locator('img')).toHaveAttribute('src', /^data:image\/png;base64,/)
+  // The card shows the picture of the 3D view that was saved with the drawing.
+  await expect(card.locator('img')).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
 })
 
 test('renaming, duplicating and deleting from the list', async ({ page, request }) => {
