@@ -1,8 +1,7 @@
 import type { Opening } from '@floorplandesigner/engine'
 import { ArrowLeftRight, FlipVertical2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { MetreField } from './MetreField'
 
 type OpeningChanges = Partial<Pick<Opening, 'width' | 'height' | 'sill' | 'hinge' | 'swing'>>
 
@@ -17,8 +16,8 @@ interface OpeningInspectorProps {
 export function OpeningInspector({ opening, onChange, onDelete }: OpeningInspectorProps) {
   const door = opening.kind === 'door'
   return (
-    <div className="ml-auto flex items-center gap-2 text-sm">
-      <span className="font-medium">{door ? 'Door' : 'Window'}</span>
+    <div className="flex flex-col gap-3">
+      <h2 className="text-sm font-semibold">{door ? 'Door' : 'Window'}</h2>
       <MetreField label="Width" value={opening.width} onCommit={(width) => onChange({ width })} />
       <MetreField
         label="Height"
@@ -33,89 +32,35 @@ export function OpeningInspector({ opening, onChange, onDelete }: OpeningInspect
           onCommit={(sill) => onChange({ sill })}
         />
       )}
-      {door && (
-        <>
-          <IconButton
-            label="Hinge on the other side"
-            onClick={() => onChange({ hinge: opening.hinge === 'start' ? 'end' : 'start' })}
-          >
-            <ArrowLeftRight />
-          </IconButton>
-          <IconButton
-            label="Open to the other side"
-            onClick={() => onChange({ swing: opening.swing === 'front' ? 'back' : 'front' })}
-          >
-            <FlipVertical2 />
-          </IconButton>
-        </>
-      )}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={door ? 'Delete door' : 'Delete window'}
-        onClick={onDelete}
-      >
-        <Trash2 />
-      </Button>
-    </div>
-  )
-}
-
-function IconButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={label} onClick={onClick}>
-          {children}
+      <div className="mt-1 flex flex-col gap-2">
+        {door && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="justify-start"
+              onClick={() => onChange({ hinge: opening.hinge === 'start' ? 'end' : 'start' })}
+            >
+              <ArrowLeftRight data-icon="inline-start" />
+              Hinge on the other side
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="justify-start"
+              title="Open to the other side (F)"
+              onClick={() => onChange({ swing: opening.swing === 'front' ? 'back' : 'front' })}
+            >
+              <FlipVertical2 data-icon="inline-start" />
+              Open to the other side
+            </Button>
+          </>
+        )}
+        <Button variant="outline" size="sm" className="justify-start" onClick={onDelete}>
+          <Trash2 data-icon="inline-start" />
+          {door ? 'Delete door' : 'Delete window'}
         </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  )
-}
-
-function MetreField({
-  label,
-  value,
-  min = 0.01,
-  onCommit,
-}: {
-  label: string
-  value: number
-  min?: number
-  onCommit: (value: number) => boolean
-}) {
-  return (
-    <label className="flex items-center gap-1">
-      <span className="text-muted-foreground">{label}</span>
-      <Input
-        type="number"
-        aria-label={`${label} in metres`}
-        // Uncontrolled, so typing is not fought by the model's value; `key` resets it per opening.
-        defaultValue={value}
-        min={min}
-        step={0.05}
-        className="h-7 w-20"
-        onChange={(event) => {
-          const next = event.target.valueAsNumber
-          const valid = Number.isFinite(next) && next >= min && onCommit(next)
-          event.target.setAttribute('aria-invalid', String(!valid))
-        }}
-        onBlur={(event) => {
-          // A value that was refused is replaced by the one the opening really has.
-          event.target.value = String(value)
-          event.target.setAttribute('aria-invalid', 'false')
-        }}
-      />
-      <span className="text-muted-foreground">m</span>
-    </label>
+      </div>
+    </div>
   )
 }

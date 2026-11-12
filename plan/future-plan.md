@@ -16,7 +16,7 @@ Sizes are rough: **S** is under a day of work, **M** is one to three days, **L**
 
 | Stage | Theme                           | Items | Why this order                                              |
 | ----- | ------------------------------- | ----- | ----------------------------------------------------------- |
-| A     | 2D editor polish                | 7     | The editor is where every plan starts; small gaps cost most |
+| A     | 2D editor polish                | 8     | The editor is where every plan starts; small gaps cost most |
 | B     | 3D view polish                  | 6     | Makes a finished plan look finished                         |
 | C     | Furniture: configure and manage | 6     | The user-facing functions, built on a polished editor       |
 | D     | Accounts and platform           | 6     | Needed before others use the app; independent of A to C     |
@@ -25,15 +25,16 @@ One item is worth doing before anything else, whatever the order: **D1, continuo
 
 ## Stage A: 2D editor polish
 
-| #   | Item                             | What and why                                                                                           | Suggestion                                                                                                                                    | Size |
-| --- | -------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| A1  | Type a wall's length             | Exact sizes need careful dragging today.                                                               | Click a dimension label and type a length; the wall's far corner moves along the wall's direction. Also a length field in the wall inspector. | M    |
-| A2  | Multi-select, copy, paste, nudge | Only one thing can be selected. Moving a group of furniture, or duplicating a chair, takes many steps. | Shift-click and drag-box selection; move together; copy, paste and duplicate; arrow keys nudge by the grid step.                              | L    |
-| A3  | Furniture follows its wall       | Moving a wall leaves the items against it behind, and they then show as overlapping.                   | Remember which wall an item was snapped to and carry it when the wall moves.                                                                  | M    |
-| A4  | Smarter collisions               | Items are not checked against doors and door swings; dragging into a collision is only a warning.      | Flag an item in a doorway or a swing. Optionally slide a dropped item to the nearest free place, behind a setting.                            | M    |
-| A5  | Room names                       | Rooms show only their area.                                                                            | A name per room ("Kitchen"), stored in the plan by room id and shown above the area. Keep the label clear of items.                           | S    |
-| A6  | Units                            | Lengths are metres only.                                                                               | A setting for metres or feet and inches. The plan stays in metres; only display and typed input change.                                       | S    |
-| A7  | Touch in 2D                      | No pinch zoom, so the editor is awkward on a tablet.                                                   | Two-finger pinch and pan in the 2D editor.                                                                                                    | M    |
+| #   | Item                                    | What and why                                                                                             | Suggestion                                                                                                                                    | Size |
+| --- | --------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| A0  | [Properties panel](properties-panel.md) | The fields for the selected wall, door, window or item crowd the toolbar, and there is no room for more. | Move them to a panel on the right, in both views, with no new fields. **Done on 2026-11-12.**                                                 | S    |
+| A1  | Type a wall's length                    | Exact sizes need careful dragging today.                                                                 | Click a dimension label and type a length; the wall's far corner moves along the wall's direction. Also a length field in the wall inspector. | M    |
+| A2  | Multi-select, copy, paste, nudge        | Only one thing can be selected. Moving a group of furniture, or duplicating a chair, takes many steps.   | Shift-click and drag-box selection; move together; copy, paste and duplicate; arrow keys nudge by the grid step.                              | L    |
+| A3  | Furniture follows its wall              | Moving a wall leaves the items against it behind, and they then show as overlapping.                     | Remember which wall an item was snapped to and carry it when the wall moves.                                                                  | M    |
+| A4  | Smarter collisions                      | Items are not checked against doors and door swings; dragging into a collision is only a warning.        | Flag an item in a doorway or a swing. Optionally slide a dropped item to the nearest free place, behind a setting.                            | M    |
+| A5  | Room names                              | Rooms show only their area.                                                                              | A name per room ("Kitchen"), stored in the plan by room id and shown above the area. Keep the label clear of items.                           | S    |
+| A6  | Units                                   | Lengths are metres only.                                                                                 | A setting for metres or feet and inches. The plan stays in metres; only display and typed input change.                                       | S    |
+| A7  | Touch in 2D                             | No pinch zoom, so the editor is awkward on a tablet.                                                     | Two-finger pinch and pan in the 2D editor.                                                                                                    | M    |
 
 ## Stage B: 3D view polish
 

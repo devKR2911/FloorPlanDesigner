@@ -15,6 +15,7 @@ import {
   MousePointer2,
   Pencil,
   Rotate3d,
+  SlidersHorizontal,
   Square,
   Redo2,
   Trash2,
@@ -43,10 +44,8 @@ import { useRenamePlan } from '@/features/plans/queries'
 import { ApiError, describeError } from '@/lib/api-client'
 import { EditorHeader, type SaveStatus } from './EditorHeader'
 import { EngineCanvas, type EditorView } from './EngineCanvas'
-import { ItemInspector } from './ItemInspector'
-import { OpeningInspector } from './OpeningInspector'
+import { PropertiesPanel } from './PropertiesPanel'
 import { useHistoryState, usePlanSaving } from './use-plan-saving'
-import { WallInspector } from './WallInspector'
 
 interface EditorProps {
   /** The saved plan to edit. */
@@ -88,6 +87,8 @@ export function Editor({ plan }: EditorProps) {
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit')
   const [selection, setSelection] = useState<Selection>(null)
   const [catalogOpen, setCatalogOpen] = useState(true)
+  // Closed until something is selected; selecting opens it, and only the toggle closes it again.
+  const [propertiesOpen, setPropertiesOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   // Kept from the first render: later saves must not reload the plan over the working copy.
   const [initialDocument] = useState(plan.document)
@@ -115,7 +116,10 @@ export function Editor({ plan }: EditorProps) {
     if (!engine) return
     // A new engine starts in move mode with nothing selected, matching the initial state here.
     const stops = [
-      engine.on('selection', setSelection),
+      engine.on('selection', (next) => {
+        setSelection(next)
+        if (next) setPropertiesOpen(true)
+      }),
       engine.on('itemError', ({ catalogKey }) => {
         const name = catalogItem(catalogKey)?.name ?? catalogKey
         setNotice(`Could not load the model for “${name}”. It is shown as a box.`)
@@ -328,14 +332,6 @@ export function Editor({ plan }: EditorProps) {
                   ? 'Click a wall, corner, door, window or item to remove it.'
                   : 'Drag corners, walls, doors, windows and furniture. R turns an item, F flips a door. Drag empty space to pan, scroll to zoom.'}
             </span>
-            {selectedWall && (
-              <WallInspector
-                key={selectedWall.id}
-                wall={selectedWall}
-                onChange={(changes) => engine.floorplan.updateWall(selectedWall.id, changes)}
-                onDelete={() => engine.editor?.deleteSelection()}
-              />
-            )}
           </>
         )}
 
@@ -365,24 +361,22 @@ export function Editor({ plan }: EditorProps) {
           </>
         )}
 
-        {selectedOpening && engine && (
-          <OpeningInspector
-            key={selectedOpening.id}
-            opening={selectedOpening}
-            onChange={(changes) => changeOpening(selectedOpening.id, changes)}
-            onDelete={() => engine.floorplan.removeOpening(selectedOpening.id)}
-          />
-        )}
-
-        {selectedItem && engine && (
-          <ItemInspector
-            key={selectedItem.id}
-            item={selectedItem}
-            name={catalogItem(selectedItem.catalogKey)?.name ?? selectedItem.catalogKey}
-            onRotate={(rotation) => engine.floorplan.updateItem(selectedItem.id, { rotation })}
-            onDelete={() => engine.floorplan.removeItem(selectedItem.id)}
-          />
-        )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={propertiesOpen ? 'secondary' : 'outline'}
+              size="sm"
+              className="ml-auto"
+              aria-pressed={propertiesOpen}
+              aria-label="Properties panel"
+              onClick={() => setPropertiesOpen((open) => !open)}
+            >
+              <SlidersHorizontal data-icon="inline-start" />
+              Properties
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{propertiesOpen ? 'Hide' : 'Show'} the properties panel</TooltipContent>
+        </Tooltip>
       </div>
 
       {notice && (
@@ -410,6 +404,33 @@ export function Editor({ plan }: EditorProps) {
         <div className="relative min-w-0 flex-1">
           <EngineCanvas view={view} onEngineChange={setEngine} className="absolute inset-0" />
         </div>
+        {propertiesOpen && engine && (
+          <PropertiesPanel
+            wall={selectedWall}
+            opening={selectedOpening}
+            item={selectedItem}
+            itemName={
+              selectedItem
+                ? (catalogItem(selectedItem.catalogKey)?.name ?? selectedItem.catalogKey)
+                : ''
+            }
+            onWallChange={(changes) =>
+              selectedWall && engine.floorplan.updateWall(selectedWall.id, changes)
+            }
+            onOpeningChange={(changes) =>
+              selectedOpening !== null && changeOpening(selectedOpening.id, changes)
+            }
+            onItemRotate={(rotation) =>
+              selectedItem && engine.floorplan.updateItem(selectedItem.id, { rotation })
+            }
+            onDelete={() => {
+              // By the model, not the 2D editor, so it works the same in the 3D view.
+              if (selectedWall) engine.floorplan.removeWall(selectedWall.id)
+              else if (selectedOpening) engine.floorplan.removeOpening(selectedOpening.id)
+              else if (selectedItem) engine.floorplan.removeItem(selectedItem.id)
+            }}
+          />
+        )}
       </main>
 
       <AlertDialog open={leaving.status === 'blocked'}>
