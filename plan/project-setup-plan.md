@@ -18,6 +18,8 @@ Each phase has its own file. A phase starts only after its own go-ahead.
 | 7     | [Undo and redo, polish, wider tests](phase-7-undo-and-polish.md) | Done        |
 | 8     | [Login](phase-8-login.md)                                        | Not started |
 
+What could come after these phases is in the [future plan](future-plan.md), a draft for discussion.
+
 ## Working preferences
 
 - **No implementation without confirmation.** Planning, reading and checking tools are fine. Creating project files, installing packages and `git init` wait for an explicit go-ahead.
