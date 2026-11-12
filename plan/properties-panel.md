@@ -28,6 +28,10 @@ All five steps are done, in about 330 lines changed across the web app, 110 of t
 - **Delete in the panel goes through the model** (`removeWall`, `removeOpening`, `removeItem`) for all three, so it works the same in either view.
 - **"Turn a quarter" and "Open to the other side" show their key** (R, F) as a browser title, not a styled tooltip, now that the buttons carry their own text.
 
+### Changed after review
+
+- **The panel starts closed** (2026-11-12, at the user's request). Selecting a wall, door, window or item opens it; clearing the selection leaves it open; only the Properties toggle closes it. The canvas therefore changes width once, on the first selection, and not on every click.
+
 ### Open questions, as decided
 
 Always shown with a toggle; a wall selected in 2D keeps its fields in 3D; 256 pixels wide; action buttons with text.
