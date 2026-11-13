@@ -2,12 +2,14 @@ import { Emitter, type Listener } from '../core/events.js'
 import {
   PLAN_FORMAT_VERSION,
   planSchema,
+  unitSystemSchema,
   type Corner,
   type Item,
   type Opening,
   type OpeningKind,
   type Plan,
   type RoomRecord,
+  type UnitSystem,
   type Wall,
 } from '../schema/plan.js'
 import {
@@ -59,13 +61,13 @@ export interface Room {
 }
 
 export type FloorplanChangeKind =
-  'load' | 'restore' | 'corners' | 'walls' | 'items' | 'openings' | 'rooms'
+  'load' | 'restore' | 'corners' | 'walls' | 'items' | 'openings' | 'rooms' | 'units'
 
 export interface FloorplanChange {
   /**
    * `walls` when the set of walls changed (corners may have changed too), `corners` when only
    * corners did, `items` when only items did, `openings` when only doors or windows did, and
-   * `rooms` when only a room's name did.
+   * `rooms` when only a room's name did, and `units` when only the display unit did.
    * A `corners` or `walls` change may also move the openings on the walls it touched.
    * `load` is a new plan; `restore` is an earlier state of the same plan put back, by undo.
    */
@@ -115,6 +117,7 @@ export class Floorplan {
   /** Which record names which detected room, rebuilt whenever the rooms or names change. */
   private roomRecordByRoom = new Map<string, RoomRecord>()
   private wallSideMap = new Map<string, Partial<Record<WallSide, string>>>()
+  private unitSystem: UnitSystem = 'metric'
   private readonly emitter = new Emitter<FloorplanEvents>()
 
   constructor(options: FloorplanOptions = {}) {
@@ -123,6 +126,22 @@ export class Floorplan {
       wallThickness: options.wallThickness ?? 0.15,
       wallHeight: options.wallHeight ?? 2.5,
     }
+  }
+
+  /**
+   * How the plan's measurements are shown and typed. Display only: every value in the model is
+   * in metres whichever is chosen.
+   */
+  get units(): UnitSystem {
+    return this.unitSystem
+  }
+
+  /** Changes the display unit. No measurement changes. */
+  setUnits(units: UnitSystem): void {
+    const next = unitSystemSchema.parse(units)
+    if (next === this.unitSystem) return
+    this.unitSystem = next
+    this.commit('units')
   }
 
   get corners(): readonly Readonly<Corner>[] {
@@ -214,6 +233,7 @@ export class Floorplan {
 
   private replace(input: unknown, kind: 'load' | 'restore'): void {
     const plan = planSchema.parse(input)
+    this.unitSystem = plan.units ?? 'metric'
     this.cornerMap.clear()
     this.wallMap.clear()
     for (const corner of plan.corners) this.cornerMap.set(corner.id, { ...corner })
@@ -231,6 +251,8 @@ export class Floorplan {
   export(): Plan {
     return structuredClone({
       version: PLAN_FORMAT_VERSION,
+      // Left out for metres, so a metre plan is saved exactly as it was before units existed.
+      ...(this.unitSystem === 'metric' ? {} : { units: this.unitSystem }),
       corners: [...this.cornerMap.values()],
       walls: [...this.wallMap.values()],
       items: [...this.itemMap.values()],
@@ -725,8 +747,8 @@ export class Floorplan {
   private commit(kind: FloorplanChangeKind, target?: string): void {
     const change = (roomsChanged: boolean): FloorplanChange =>
       target === undefined ? { kind, roomsChanged } : { kind, roomsChanged, target }
-    // Items and openings never change the walls, so the rooms stay as they are.
-    if (kind === 'items' || kind === 'openings') {
+    // Items, openings and the display unit never change the walls, so the rooms stay as they are.
+    if (kind === 'items' || kind === 'openings' || kind === 'units') {
       this.emitter.emit('change', change(false))
       return
     }

@@ -52,5 +52,15 @@ export { WALKER_RADIUS, moveWalker, wallBlocks } from './walk-collision.js'
 export type { WallBlock } from './walk-collision.js'
 export { History } from './history.js'
 export type { HistoryEvents, HistoryOptions } from './history.js'
+export {
+  METRES_PER_INCH,
+  formatArea,
+  formatLength,
+  fromFeetAndInches,
+  gridLines,
+  toFeetAndInches,
+  unitGrid,
+} from './units.js'
+export type { GridLine, UnitGrid } from './units.js'
 export * from './geometry.js'
 export * from '../schema/index.js'
