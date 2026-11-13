@@ -8,6 +8,7 @@ import type { ItemShape } from '../schema/item-definition.js'
 import type { Hit } from './hit-testing.js'
 import type { DrawPreview, Selection } from './interaction.js'
 import type { Viewport } from './viewport.js'
+import { roomLabels } from './room-labels.js'
 
 export interface EditorTheme {
   background: string
@@ -15,6 +16,8 @@ export interface EditorTheme {
   gridMajor: string
   axis: string
   roomFill: string
+  /** Fill of the selected room. */
+  roomSelectedFill: string
   roomLabel: string
   /** The wall's centre line, which is what corners sit on and what is drawn and dragged. */
   wall: string
@@ -58,6 +61,7 @@ export const defaultTheme: EditorTheme = {
   gridMajor: '#dcdcdf',
   axis: '#b4b4b9',
   roomFill: 'rgba(59, 130, 246, 0.08)',
+  roomSelectedFill: 'rgba(59, 130, 246, 0.18)',
   roomLabel: '#52525b',
   wall: '#18181b',
   wallHover: '#2563eb',
@@ -133,12 +137,10 @@ const CORNER_RADIUS = 4
 const CORNER_RADIUS_ACTIVE = 6
 const DIMENSION_OFFSET = 14
 
+export { formatArea } from './room-labels.js'
+
 export function formatLength(metres: number): string {
   return `${metres.toFixed(2)} m`
-}
-
-export function formatArea(squareMetres: number): string {
-  return `${squareMetres.toFixed(1)} m²`
 }
 
 /** Draws the whole plan. `ctx` must already be scaled for the device pixel ratio. */
@@ -187,23 +189,33 @@ function drawGrid(ctx: CanvasRenderingContext2D, { viewport, theme }: RenderStat
 
 function drawRooms(
   ctx: CanvasRenderingContext2D,
-  { floorplan, viewport, theme, plain }: RenderState,
+  { floorplan, viewport, theme, selection, plain }: RenderState,
 ): void {
   for (const room of floorplan.rooms) {
     const outline = room.interior.length >= 3 ? room.interior : room.polygon
-    ctx.fillStyle = theme.roomFill
+    const selected = !plain && selection?.kind === 'room' && selection.id === room.id
+    ctx.fillStyle = selected ? theme.roomSelectedFill : theme.roomFill
     tracePolygon(
       ctx,
       outline.map((p) => viewport.toScreen(p)),
     )
     ctx.fill()
+  }
+  if (plain) return
 
-    if (plain) continue
-    const label = viewport.toScreen(room.centroid)
+  // The label: the room's name, when it has one, over its area.
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  for (const label of roomLabels(floorplan, viewport)) {
     ctx.fillStyle = theme.roomLabel
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(formatArea(room.area), label.x, label.y)
+    if (label.name === undefined) {
+      ctx.fillText(label.area, label.centre.x, label.centre.y)
+      continue
+    }
+    ctx.font = `600 ${theme.font}`
+    ctx.fillText(label.name, label.centre.x, label.centre.y - 8)
+    ctx.font = theme.font
+    ctx.fillText(label.area, label.centre.x, label.centre.y + 8)
   }
 }
 

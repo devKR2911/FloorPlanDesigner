@@ -136,7 +136,8 @@ describe('move mode', () => {
     expect(interaction.selection).toEqual({ kind: 'corner', id: cornerAt(0, 0)!.id })
     click(2, 0.05)
     expect(interaction.selection?.kind).toBe('wall')
-    click(2, 2)
+    // Away from the room's label, which would select the room.
+    click(0.8, 3.2)
     expect(interaction.selection).toBeNull()
     expect(selections).toHaveLength(3)
   })
@@ -194,6 +195,48 @@ describe('move mode', () => {
     interaction.pointerMove(at(2.5, 0.05))
     interaction.pointerMove(at(2, 2))
     expect(hovers).toEqual([{ kind: 'wall', id: expect.any(String) }, null])
+  })
+})
+
+describe('room labels', () => {
+  it('selects the room when its label is clicked, and shows no hover for it', () => {
+    drawSquare()
+    const roomId = floorplan.rooms[0]!.id
+    // The label sits at the room's centroid.
+    click(2, 2)
+    expect(interaction.selection).toEqual({ kind: 'room', id: roomId })
+    expect(interaction.hover).toBeNull()
+  })
+
+  it('clears the selection on empty floor away from the label', () => {
+    drawSquare()
+    click(2, 2)
+    click(0.8, 3.2)
+    expect(interaction.selection).toBeNull()
+  })
+
+  it('lets a corner near the label win over the room', () => {
+    drawSquare()
+    // A second room drawn small enough that its corner sits by the first label's box.
+    floorplan.moveCorner(cornerAt(4, 4)!.id, 2.05, 2.05)
+    click(2.05, 2.05)
+    expect(interaction.selection?.kind).toBe('corner')
+  })
+
+  it('does not delete a room with the Delete key, and keeps it selected', () => {
+    drawSquare()
+    click(2, 2)
+    expect(interaction.key('Delete')).toBe(false)
+    expect(interaction.selection?.kind).toBe('room')
+    expect(floorplan.walls).toHaveLength(4)
+  })
+
+  it('does nothing to a label clicked in delete mode', () => {
+    drawSquare()
+    interaction.mode = 'delete'
+    click(2, 2)
+    expect(floorplan.walls).toHaveLength(4)
+    expect(floorplan.rooms).toHaveLength(1)
   })
 })
 

@@ -13,6 +13,7 @@ import {
   type OpeningSnapSettings,
 } from '../model/wall-openings.js'
 import { hitTest, rotateHandlePosition, type Hit } from './hit-testing.js'
+import { roomLabelAt } from './room-labels.js'
 import { snapPoint, toGrid, type SnapSettings, type SnapTarget } from './snapping.js'
 import type { Viewport } from './viewport.js'
 
@@ -376,6 +377,8 @@ export class Interaction {
   deleteSelection(): boolean {
     const selection = this.selectionStore.current
     if (!selection) return false
+    // A room is not a thing that can be deleted; only its walls can be.
+    if (selection.kind === 'room') return false
     this.select(null)
     this.remove(selection)
     return true
@@ -405,6 +408,7 @@ export class Interaction {
   }
 
   private remove(target: NonNullable<Selection>): void {
+    if (target.kind === 'room') return
     if (target.kind === 'corner') this.floorplan.removeCorner(target.id)
     else if (target.kind === 'wall') this.floorplan.removeWall(target.id)
     else if (target.kind === 'opening') this.floorplan.removeOpening(target.id)
@@ -457,7 +461,8 @@ export class Interaction {
   private click(input: PointerInput, hit: Hit): void {
     switch (this.currentMode) {
       case 'move':
-        this.select(hit)
+        // A click on a room's label selects the room; anything drawn over the label wins.
+        this.select(hit ?? this.roomLabelHit(input))
         break
       case 'draw':
         this.placeCorner(input)
@@ -595,6 +600,11 @@ export class Interaction {
     this.currentHover = hit
     this.emitter.emit('hover', hit)
     this.invalidate()
+  }
+
+  private roomLabelHit(input: PointerInput): Selection {
+    const roomId = roomLabelAt(input.screen, this.floorplan, this.viewport)
+    return roomId === null ? null : { kind: 'room', id: roomId }
   }
 
   private select(selection: Selection): void {
