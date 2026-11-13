@@ -71,7 +71,18 @@ export function counts(page: Page) {
 }
 
 /** Where a point on the plan is on the screen, in the 2D editor. */
-export function onScreen(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
+export async function onScreen(
+  page: Page,
+  x: number,
+  y: number,
+): Promise<{ x: number; y: number }> {
+  // A panel opening or closing changes the canvas's size, and the editor follows a moment
+  // later, keeping the middle of the view where it was. Wait until it has, or the point is
+  // worked out for a view that is about to move.
+  await page.waitForFunction(() => {
+    const editor = window.__floorplanEngine?.editor
+    return !!editor && editor.viewport.width === editor.canvas.clientWidth
+  })
   return withEngine(
     page,
     (engine, point) => {
