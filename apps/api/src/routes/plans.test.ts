@@ -91,6 +91,19 @@ describe('creating and reading plans', () => {
     expect(plan.document.openings).toEqual([])
   })
 
+  it('stores the display unit of a plan in feet, and none for a plan without one', async () => {
+    const inFeet = await create('Feet', { document: { ...roomDocument, units: 'imperial' } })
+    expect(inFeet.document).toEqual({ ...roomDocument, units: 'imperial' })
+    expect((await create('Metres', { document: roomDocument })).document).not.toHaveProperty(
+      'units',
+    )
+    const response = await send('POST', '', {
+      name: 'Bad',
+      document: { ...roomDocument, units: 'inches' },
+    })
+    expect(response.status).toBe(400)
+  })
+
   it('reads a plan back by its id', async () => {
     const plan = await create('Flat', { document: roomDocument, thumbnail: png })
     const response = await send('GET', `/${plan.id}`)
