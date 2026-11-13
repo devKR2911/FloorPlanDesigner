@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { Item, Opening, Wall } from '@floorplandesigner/engine'
+import type { Item, Opening, Room, Wall } from '@floorplandesigner/engine'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -26,11 +26,27 @@ const sofa: Item = {
   rotation: Math.PI / 2,
 }
 
-function renderPanel(selected: { wall?: Wall; opening?: Opening; item?: Item } = {}) {
+const room: Room = {
+  id: 'a-b-c-d',
+  cornerIds: ['a', 'b', 'c', 'd'],
+  wallIds: ['ab', 'bc', 'cd', 'da'],
+  polygon: [
+    { x: 0, y: 0 },
+    { x: 4, y: 0 },
+    { x: 4, y: 3 },
+    { x: 0, y: 3 },
+  ],
+  interior: [],
+  area: 12,
+  centroid: { x: 2, y: 1.5 },
+}
+
+function renderPanel(selected: { wall?: Wall; opening?: Opening; item?: Item; room?: Room } = {}) {
   const handlers = {
     onWallChange: vi.fn(),
     onOpeningChange: vi.fn(() => true),
     onItemRotate: vi.fn(),
+    onRoomName: vi.fn(),
     onDelete: vi.fn(),
   }
   renderPlain(
@@ -38,6 +54,7 @@ function renderPanel(selected: { wall?: Wall; opening?: Opening; item?: Item } =
       wall={selected.wall ?? null}
       opening={selected.opening ?? null}
       item={selected.item ?? null}
+      room={selected.room ?? null}
       itemName="Sofa"
       {...handlers}
     />,
@@ -49,7 +66,7 @@ describe('PropertiesPanel', () => {
   it('asks for a selection when nothing is selected', () => {
     renderPanel()
     expect(screen.getByRole('complementary', { name: 'Properties' })).toHaveTextContent(
-      'Select a wall, door, window or item to edit it.',
+      'Select a wall, door, window, item or room to edit it.',
     )
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
   })
@@ -91,6 +108,26 @@ describe('PropertiesPanel', () => {
     expect(onOpeningChange).toHaveBeenLastCalledWith({ swing: 'back' })
     await user.click(screen.getByRole('button', { name: 'Delete door' }))
     expect(onDelete).toHaveBeenCalledOnce()
+  })
+
+  it('shows a room with its name, area and no delete button', async () => {
+    const user = userEvent.setup()
+    const { onRoomName, onDelete } = renderPanel({ room: { ...room, name: 'Kitchen' } })
+    expect(screen.getByRole('heading', { name: 'Kitchen' })).toBeInTheDocument()
+    expect(screen.getByText('12.0 m²')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+
+    const name = screen.getByRole('textbox', { name: 'Room name' })
+    expect(name).toHaveValue('Kitchen')
+    await user.type(name, 's')
+    expect(onRoomName).toHaveBeenLastCalledWith('Kitchens')
+    expect(onDelete).not.toHaveBeenCalled()
+  })
+
+  it('shows an unnamed room with a plain heading', () => {
+    renderPanel({ room })
+    expect(screen.getByRole('heading', { name: 'Room' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Room name' })).toHaveValue('')
   })
 
   it('shows an item by its name, with its rotation in degrees', async () => {

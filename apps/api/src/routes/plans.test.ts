@@ -28,6 +28,7 @@ const roomDocument = {
     { id: 'b', x: 4, y: 0 },
   ],
   walls: [{ id: 'w', start: 'a', end: 'b', thickness: 0.15, height: 2.5 }],
+  rooms: [],
 }
 const png =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg=='

@@ -187,6 +187,8 @@ export function Editor({ plan }: EditorProps) {
     selection?.kind === 'opening' ? (engine?.floorplan.getOpening(selection.id) ?? null) : null
   const selectedItem =
     selection?.kind === 'item' ? (engine?.floorplan.getItem(selection.id) ?? null) : null
+  const selectedRoom =
+    selection?.kind === 'room' ? (engine?.floorplan.getRoom(selection.id) ?? null) : null
 
   /** Focuses the view showing, so the keys for the new selection work straight away. */
   function focusView() {
@@ -409,6 +411,7 @@ export function Editor({ plan }: EditorProps) {
             wall={selectedWall}
             opening={selectedOpening}
             item={selectedItem}
+            room={selectedRoom}
             itemName={
               selectedItem
                 ? (catalogItem(selectedItem.catalogKey)?.name ?? selectedItem.catalogKey)
@@ -423,6 +426,7 @@ export function Editor({ plan }: EditorProps) {
             onItemRotate={(rotation) =>
               selectedItem && engine.floorplan.updateItem(selectedItem.id, { rotation })
             }
+            onRoomName={(name) => selectedRoom && engine.floorplan.nameRoom(selectedRoom.id, name)}
             onDelete={() => {
               // By the model, not the 2D editor, so it works the same in the 3D view.
               if (selectedWall) engine.floorplan.removeWall(selectedWall.id)

@@ -5,7 +5,14 @@ import { vi } from 'vitest'
 export const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg=='
 
-const emptyDocument = { version: 1 as const, corners: [], walls: [], items: [], openings: [] }
+const emptyDocument = {
+  version: 1 as const,
+  corners: [],
+  walls: [],
+  items: [],
+  openings: [],
+  rooms: [],
+}
 
 /**
  * Stands in for the backend in component tests: it keeps plans in memory and answers the same

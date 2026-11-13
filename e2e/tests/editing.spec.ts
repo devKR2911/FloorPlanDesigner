@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test'
-import { catalogueButton, counts, drawRoom, newPlan, openPlan, saveStatus } from '../support.js'
+import {
+  catalogueButton,
+  clickPlan,
+  counts,
+  drawRoom,
+  newPlan,
+  openPlan,
+  saveStatus,
+  withEngine,
+} from '../support.js'
 
 test('drawing a room, undoing and redoing it, and finding it saved after a reload', async ({
   page,
@@ -42,6 +51,32 @@ test('drawing a room, undoing and redoing it, and finding it saved after a reloa
   await expect(saveStatus(page)).toHaveText(/^Saved/)
   await openPlan(page, id)
   expect(await counts(page)).toMatchObject({ walls: 4, rooms: 1 })
+})
+
+test('naming a room from its label, and finding the name after a reload', async ({
+  page,
+  request,
+}) => {
+  const id = await newPlan(page, request)
+  await drawRoom(page, 4, 3)
+
+  // drawRoom centres the room on the origin, so its label (at the centroid) is there too.
+  await clickPlan(page, 0, 0)
+  const name = page.getByRole('textbox', { name: 'Room name' })
+  await expect(name).toHaveValue('')
+  await name.fill('Kitchen')
+  await expect(page.getByRole('heading', { name: 'Kitchen', exact: true })).toBeVisible()
+
+  // One undo removes the whole typed name; redo brings it back.
+  await page.getByRole('button', { name: 'Undo' }).click()
+  expect(await withEngine(page, (engine) => engine.floorplan.rooms[0]!.name ?? null)).toBeNull()
+  await page.getByRole('button', { name: 'Redo' }).click()
+
+  await expect(saveStatus(page)).toHaveText(/^Saved/)
+  await openPlan(page, id)
+  expect(await withEngine(page, (engine) => engine.floorplan.rooms[0]!.name ?? null)).toBe(
+    'Kitchen',
+  )
 })
 
 test('undoing back to what was saved shows the plan as saved again', async ({ page, request }) => {

@@ -1,15 +1,17 @@
-import type { Item, Opening, Wall } from '@floorplandesigner/engine'
+import type { Item, Opening, Room, Wall } from '@floorplandesigner/engine'
 import { ItemInspector } from './ItemInspector'
+import { RoomInspector } from './RoomInspector'
 import { OpeningInspector } from './OpeningInspector'
 import { WallInspector } from './WallInspector'
 
 type OpeningChanges = Parameters<React.ComponentProps<typeof OpeningInspector>['onChange']>[0]
 
 interface PropertiesPanelProps {
-  /** At most one of the three is set: whatever is selected. */
+  /** At most one of the four is set: whatever is selected. */
   wall: Readonly<Wall> | null
   opening: Readonly<Opening> | null
   item: Readonly<Item> | null
+  room: Room | null
   /** The selected item's name in the catalogue. */
   itemName: string
   onWallChange: (changes: { thickness?: number; height?: number }) => void
@@ -17,6 +19,8 @@ interface PropertiesPanelProps {
   onOpeningChange: (changes: OpeningChanges) => boolean
   /** Sets the selected item's rotation, in radians. */
   onItemRotate: (rotation: number) => void
+  /** Sets the selected room's name; an empty name removes it. */
+  onRoomName: (name: string) => void
   /** Deletes whatever is selected. */
   onDelete: () => void
 }
@@ -29,10 +33,12 @@ export function PropertiesPanel({
   wall,
   opening,
   item,
+  room,
   itemName,
   onWallChange,
   onOpeningChange,
   onItemRotate,
+  onRoomName,
   onDelete,
 }: PropertiesPanelProps) {
   return (
@@ -57,9 +63,11 @@ export function PropertiesPanel({
           onRotate={onItemRotate}
           onDelete={onDelete}
         />
+      ) : room ? (
+        <RoomInspector key={room.id} room={room} onName={onRoomName} />
       ) : (
         <p className="text-sm text-muted-foreground">
-          Select a wall, door, window or item to edit it.
+          Select a wall, door, window, item or room to edit it.
         </p>
       )}
     </aside>

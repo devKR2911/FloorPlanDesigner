@@ -28,7 +28,7 @@ describe('createPlanRequestSchema', () => {
   it('trims the name and keeps the document', () => {
     expect(createPlanRequestSchema.parse({ name: '  Flat  ', document: emptyDocument })).toEqual({
       name: 'Flat',
-      document: { ...emptyDocument, openings: [] },
+      document: { ...emptyDocument, openings: [], rooms: [] },
     })
   })
 
