@@ -30,6 +30,18 @@ function issuePaths(input: unknown): string[] {
   return result.success ? [] : result.error.issues.map((issue) => issue.path.join('.'))
 }
 
+describe('the display unit', () => {
+  it('is optional, and kept when given', () => {
+    expect(planSchema.parse(validPlan)).not.toHaveProperty('units')
+    expect(planSchema.parse({ ...validPlan, units: 'imperial' }).units).toBe('imperial')
+    expect(planSchema.parse({ ...validPlan, units: 'metric' }).units).toBe('metric')
+  })
+
+  it('must be one the engine knows', () => {
+    expect(issuePaths({ ...validPlan, units: 'inches' })).toEqual(['units'])
+  })
+})
+
 describe('planSchema', () => {
   it('accepts an empty plan', () => {
     expect(planSchema.parse(createEmptyPlan())).toEqual(createEmptyPlan())

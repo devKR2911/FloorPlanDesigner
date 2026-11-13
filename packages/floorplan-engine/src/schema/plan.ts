@@ -5,6 +5,12 @@ export const PLAN_FORMAT_VERSION = 1
 
 const idSchema = z.string().min(1)
 
+/**
+ * How a plan's measurements are shown and typed: metres, or feet and inches. It is display
+ * only: every length in a plan is stored in metres whichever is chosen.
+ */
+export const unitSystemSchema = z.enum(['metric', 'imperial'])
+
 /** A point where walls meet. Coordinates are in metres on the floor plane. */
 export const cornerSchema = z.object({
   id: idSchema,
@@ -72,6 +78,8 @@ export const roomRecordSchema = z.object({
 export const planSchema = z
   .object({
     version: z.literal(PLAN_FORMAT_VERSION),
+    /** The display unit. Missing means metres, as in every plan saved before units existed. */
+    units: unitSystemSchema.optional(),
     corners: z.array(cornerSchema),
     walls: z.array(wallSchema),
     items: z.array(itemSchema),
@@ -146,6 +154,7 @@ export type Wall = z.infer<typeof wallSchema>
 export type Item = z.infer<typeof itemSchema>
 export type Opening = z.infer<typeof openingSchema>
 export type RoomRecord = z.infer<typeof roomRecordSchema>
+export type UnitSystem = z.infer<typeof unitSystemSchema>
 export type OpeningKind = Opening['kind']
 export type Plan = z.infer<typeof planSchema>
 

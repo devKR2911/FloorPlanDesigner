@@ -7,9 +7,19 @@ export {
   openingSchema,
   planSchema,
   roomRecordSchema,
+  unitSystemSchema,
   wallSchema,
 } from './plan.js'
-export type { Corner, Item, Opening, OpeningKind, Plan, RoomRecord, Wall } from './plan.js'
+export type {
+  Corner,
+  Item,
+  Opening,
+  OpeningKind,
+  Plan,
+  RoomRecord,
+  UnitSystem,
+  Wall,
+} from './plan.js'
 export {
   footprintPieceProblem,
   footprintSchema,
