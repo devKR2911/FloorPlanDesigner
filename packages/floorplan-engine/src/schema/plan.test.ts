@@ -22,6 +22,7 @@ const validPlan: Plan = {
       swing: 'front',
     },
   ],
+  rooms: [{ id: 'r1', name: 'Kitchen', anchor: { x: 1, y: 1 } }],
 }
 
 function issuePaths(input: unknown): string[] {
@@ -50,6 +51,25 @@ describe('planSchema', () => {
     const older: Partial<Plan> = { ...validPlan }
     delete older.openings
     expect(planSchema.parse(older)).toEqual({ ...validPlan, openings: [] })
+  })
+
+  it('reads a plan saved before rooms could be named as having no names', () => {
+    const older: Partial<Plan> = { ...validPlan }
+    delete older.rooms
+    expect(planSchema.parse(older)).toEqual({ ...validPlan, rooms: [] })
+  })
+
+  it('rejects room names that are blank, too long or duplicated', () => {
+    const record = validPlan.rooms[0]!
+    expect(issuePaths({ ...validPlan, rooms: [{ ...record, name: '   ' }] })).toEqual([
+      'rooms.0.name',
+    ])
+    expect(issuePaths({ ...validPlan, rooms: [{ ...record, name: 'x'.repeat(61) }] })).toEqual([
+      'rooms.0.name',
+    ])
+    expect(issuePaths({ ...validPlan, rooms: [record, { ...record, name: 'Hall' }] })).toEqual([
+      'rooms.1.id',
+    ])
   })
 
   it('rejects an opening on a wall that does not exist', () => {

@@ -57,6 +57,18 @@ export const openingSchema = z.object({
   swing: z.enum(['front', 'back']),
 })
 
+/**
+ * A room name. Rooms themselves are detected from the walls, not stored, so the name is a
+ * record with an anchor point: it belongs to whichever room contains that point, and survives
+ * the room being reshaped, moved or even deleted and redrawn.
+ */
+export const roomRecordSchema = z.object({
+  id: idSchema,
+  name: z.string().trim().min(1).max(60),
+  /** A point inside the room, in metres. */
+  anchor: z.object({ x: z.number(), y: z.number() }),
+})
+
 export const planSchema = z
   .object({
     version: z.literal(PLAN_FORMAT_VERSION),
@@ -65,9 +77,11 @@ export const planSchema = z
     items: z.array(itemSchema),
     /** Missing in plans saved before doors and windows existed, which have none. */
     openings: z.array(openingSchema).default([]),
+    /** Room names. Missing in plans saved before rooms could be named. */
+    rooms: z.array(roomRecordSchema).default([]),
   })
   .superRefine((plan, ctx) => {
-    const reportDuplicates = (key: 'corners' | 'walls' | 'items' | 'openings') => {
+    const reportDuplicates = (key: 'corners' | 'walls' | 'items' | 'openings' | 'rooms') => {
       const seen = new Set<string>()
       plan[key].forEach((entry, index) => {
         if (seen.has(entry.id)) {
@@ -84,6 +98,7 @@ export const planSchema = z
     reportDuplicates('walls')
     reportDuplicates('items')
     reportDuplicates('openings')
+    reportDuplicates('rooms')
 
     const cornerIds = new Set(plan.corners.map((corner) => corner.id))
     const wallIds = new Set(plan.walls.map((wall) => wall.id))
@@ -130,9 +145,17 @@ export type Corner = z.infer<typeof cornerSchema>
 export type Wall = z.infer<typeof wallSchema>
 export type Item = z.infer<typeof itemSchema>
 export type Opening = z.infer<typeof openingSchema>
+export type RoomRecord = z.infer<typeof roomRecordSchema>
 export type OpeningKind = Opening['kind']
 export type Plan = z.infer<typeof planSchema>
 
 export function createEmptyPlan(): Plan {
-  return { version: PLAN_FORMAT_VERSION, corners: [], walls: [], items: [], openings: [] }
+  return {
+    version: PLAN_FORMAT_VERSION,
+    corners: [],
+    walls: [],
+    items: [],
+    openings: [],
+    rooms: [],
+  }
 }

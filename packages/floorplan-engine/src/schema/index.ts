@@ -6,9 +6,10 @@ export {
   itemSchema,
   openingSchema,
   planSchema,
+  roomRecordSchema,
   wallSchema,
 } from './plan.js'
-export type { Corner, Item, Opening, OpeningKind, Plan, Wall } from './plan.js'
+export type { Corner, Item, Opening, OpeningKind, Plan, RoomRecord, Wall } from './plan.js'
 export {
   footprintPieceProblem,
   footprintSchema,
