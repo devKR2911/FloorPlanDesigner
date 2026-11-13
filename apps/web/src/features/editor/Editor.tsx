@@ -5,6 +5,7 @@ import {
   type Floorplan,
   type FloorplanEngine,
   type Selection,
+  type UnitSystem,
 } from '@floorplandesigner/engine'
 import type { PlanRecord } from '@floorplandesigner/shared'
 import {
@@ -45,6 +46,7 @@ import { ApiError, describeError } from '@/lib/api-client'
 import { EditorHeader, type SaveStatus } from './EditorHeader'
 import { EngineCanvas, type EditorView } from './EngineCanvas'
 import { PropertiesPanel } from './PropertiesPanel'
+import { UnitsContext } from './units-context'
 import { useHistoryState, usePlanSaving } from './use-plan-saving'
 
 interface EditorProps {
@@ -181,6 +183,8 @@ export function Editor({ plan }: EditorProps) {
   } else if (dirty) status = { kind: 'unsaved' }
   else status = { kind: 'saved', at: plan.updatedAt }
 
+  // Read on every render; a unit change is a plan change, which re-renders this component.
+  const units: UnitSystem = engine?.units ?? 'metric'
   const selectedWall =
     selection?.kind === 'wall' ? (engine?.floorplan.getWall(selection.id) ?? null) : null
   const selectedOpening =
@@ -302,6 +306,27 @@ export function Editor({ plan }: EditorProps) {
             3D
           </ToggleGroupItem>
         </ToggleGroup>
+        {engine && (
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            aria-label="Units"
+            value={units}
+            onValueChange={(value) => value && engine.setUnits(value as UnitSystem)}
+          >
+            <ToggleGroupItem value="metric" aria-label="Metres" title="Units: metres">
+              m
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="imperial"
+              aria-label="Feet and inches"
+              title="Units: feet and inches"
+            >
+              ft
+            </ToggleGroupItem>
+          </ToggleGroup>
+        )}
 
         {view === '2d' && engine?.editor && (
           <>
@@ -407,33 +432,37 @@ export function Editor({ plan }: EditorProps) {
           <EngineCanvas view={view} onEngineChange={setEngine} className="absolute inset-0" />
         </div>
         {propertiesOpen && engine && (
-          <PropertiesPanel
-            wall={selectedWall}
-            opening={selectedOpening}
-            item={selectedItem}
-            room={selectedRoom}
-            itemName={
-              selectedItem
-                ? (catalogItem(selectedItem.catalogKey)?.name ?? selectedItem.catalogKey)
-                : ''
-            }
-            onWallChange={(changes) =>
-              selectedWall && engine.floorplan.updateWall(selectedWall.id, changes)
-            }
-            onOpeningChange={(changes) =>
-              selectedOpening !== null && changeOpening(selectedOpening.id, changes)
-            }
-            onItemRotate={(rotation) =>
-              selectedItem && engine.floorplan.updateItem(selectedItem.id, { rotation })
-            }
-            onRoomName={(name) => selectedRoom && engine.floorplan.nameRoom(selectedRoom.id, name)}
-            onDelete={() => {
-              // By the model, not the 2D editor, so it works the same in the 3D view.
-              if (selectedWall) engine.floorplan.removeWall(selectedWall.id)
-              else if (selectedOpening) engine.floorplan.removeOpening(selectedOpening.id)
-              else if (selectedItem) engine.floorplan.removeItem(selectedItem.id)
-            }}
-          />
+          <UnitsContext value={units}>
+            <PropertiesPanel
+              wall={selectedWall}
+              opening={selectedOpening}
+              item={selectedItem}
+              room={selectedRoom}
+              itemName={
+                selectedItem
+                  ? (catalogItem(selectedItem.catalogKey)?.name ?? selectedItem.catalogKey)
+                  : ''
+              }
+              onWallChange={(changes) =>
+                selectedWall && engine.floorplan.updateWall(selectedWall.id, changes)
+              }
+              onOpeningChange={(changes) =>
+                selectedOpening !== null && changeOpening(selectedOpening.id, changes)
+              }
+              onItemRotate={(rotation) =>
+                selectedItem && engine.floorplan.updateItem(selectedItem.id, { rotation })
+              }
+              onRoomName={(name) =>
+                selectedRoom && engine.floorplan.nameRoom(selectedRoom.id, name)
+              }
+              onDelete={() => {
+                // By the model, not the 2D editor, so it works the same in the 3D view.
+                if (selectedWall) engine.floorplan.removeWall(selectedWall.id)
+                else if (selectedOpening) engine.floorplan.removeOpening(selectedOpening.id)
+                else if (selectedItem) engine.floorplan.removeItem(selectedItem.id)
+              }}
+            />
+          </UnitsContext>
         )}
       </main>
 

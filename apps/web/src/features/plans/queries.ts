@@ -1,4 +1,4 @@
-import { createEmptyPlan, type Plan } from '@floorplandesigner/engine/schema'
+import { createEmptyPlan, type Plan, type UnitSystem } from '@floorplandesigner/engine/schema'
 import type { PlanRecord, PlanSummary } from '@floorplandesigner/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, toApiError } from '@/lib/api-client'
@@ -24,12 +24,18 @@ async function getPlan(id: string): Promise<PlanRecord> {
 async function createPlan(input: {
   name: string
   document?: Plan
+  /** The display unit of a new, empty plan. Metres when left out. */
+  units?: UnitSystem
   thumbnail?: string | null
 }): Promise<PlanRecord> {
   const response = await api.plans.$post({
     json: {
       name: input.name,
-      document: input.document ?? createEmptyPlan(),
+      document: input.document ?? {
+        ...createEmptyPlan(),
+        // A metre plan has no unit written, like every plan saved before units existed.
+        ...(input.units === 'imperial' && { units: input.units }),
+      },
       thumbnail: input.thumbnail ?? null,
     },
   })

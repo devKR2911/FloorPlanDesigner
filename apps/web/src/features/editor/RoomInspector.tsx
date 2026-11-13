@@ -1,5 +1,6 @@
 import { formatArea, type Room } from '@floorplandesigner/engine'
 import { Input } from '@/components/ui/input'
+import { useUnits } from './units-context'
 
 interface RoomInspectorProps {
   room: Room
@@ -9,6 +10,7 @@ interface RoomInspectorProps {
 
 /** Shows the selected room and edits its name. A room has no delete: only its walls can go. */
 export function RoomInspector({ room, onName }: RoomInspectorProps) {
+  const units = useUnits()
   return (
     <div className="flex flex-col gap-3">
       <h2 className="text-sm font-semibold">{room.name ?? 'Room'}</h2>
@@ -30,7 +32,7 @@ export function RoomInspector({ room, onName }: RoomInspectorProps) {
       </label>
       <div className="flex flex-col gap-1 text-sm">
         <span className="text-muted-foreground">Area</span>
-        <span>{formatArea(room.area)}</span>
+        <span>{formatArea(room.area, units)}</span>
       </div>
     </div>
   )

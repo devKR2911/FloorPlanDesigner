@@ -1,7 +1,7 @@
 import type { Opening } from '@floorplandesigner/engine'
 import { ArrowLeftRight, FlipVertical2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { MetreField } from './MetreField'
+import { LengthField } from './LengthField'
 
 type OpeningChanges = Partial<Pick<Opening, 'width' | 'height' | 'sill' | 'hinge' | 'swing'>>
 
@@ -12,20 +12,20 @@ interface OpeningInspectorProps {
   onDelete: () => void
 }
 
-/** Edits the selected door or window. Lengths are in metres. */
+/** Edits the selected door or window. Lengths are passed on in metres, whatever unit they are typed in. */
 export function OpeningInspector({ opening, onChange, onDelete }: OpeningInspectorProps) {
   const door = opening.kind === 'door'
   return (
     <div className="flex flex-col gap-3">
       <h2 className="text-sm font-semibold">{door ? 'Door' : 'Window'}</h2>
-      <MetreField label="Width" value={opening.width} onCommit={(width) => onChange({ width })} />
-      <MetreField
+      <LengthField label="Width" value={opening.width} onCommit={(width) => onChange({ width })} />
+      <LengthField
         label="Height"
         value={opening.height}
         onCommit={(height) => onChange({ height })}
       />
       {!door && (
-        <MetreField
+        <LengthField
           label="Sill"
           value={opening.sill}
           min={0}

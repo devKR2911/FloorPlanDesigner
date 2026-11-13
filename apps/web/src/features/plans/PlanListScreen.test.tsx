@@ -115,6 +115,34 @@ describe('creating a plan', () => {
     expect(router.state.location.pathname).toBe(`/plans/${backend.plans[0]!.id}`)
   })
 
+  it('offers metres or feet, starts on metres, and writes no unit into a metre plan', async () => {
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'New plan' }))
+    const dialog = await screen.findByRole('dialog', { name: 'New plan' })
+    const units = within(dialog).getByRole('radiogroup', { name: 'Units' })
+    expect(within(units).getByRole('radio', { name: 'Metres' })).toBeChecked()
+    expect(within(units).getByRole('radio', { name: 'Feet' })).not.toBeChecked()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+    await screen.findByText('The editor')
+    expect(backend.plans[0]!.document).not.toHaveProperty('units')
+  })
+
+  it('creates a plan in feet when Feet is chosen', async () => {
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'New plan' }))
+    const dialog = await screen.findByRole('dialog', { name: 'New plan' })
+    await user.click(within(dialog).getByRole('radio', { name: 'Feet' }))
+    expect(within(dialog).getByRole('radio', { name: 'Feet' })).toBeChecked()
+    // Clicking the chosen unit again does not clear it.
+    await user.click(within(dialog).getByRole('radio', { name: 'Feet' }))
+    expect(within(dialog).getByRole('radio', { name: 'Feet' })).toBeChecked()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+    await screen.findByText('The editor')
+    expect(backend.plans[0]!.document).toMatchObject({ version: 1, units: 'imperial' })
+  })
+
   it('keeps the dialog open and says why when the backend refuses', async () => {
     const { user } = renderApp()
     await user.click(await screen.findByRole('button', { name: 'New plan' }))
@@ -136,6 +164,8 @@ describe('renaming a plan', () => {
     await user.click(within(menu).getByRole('menuitem', { name: 'Rename' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Rename plan' })
+    // An existing plan's unit is changed in the editor, not here.
+    expect(within(dialog).queryByRole('radiogroup', { name: 'Units' })).not.toBeInTheDocument()
     const name = within(dialog).getByRole('textbox', { name: 'Plan name' })
     expect(name).toHaveValue('Attic')
     await user.clear(name)

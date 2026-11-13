@@ -162,10 +162,11 @@ export function PlanListScreen() {
           error={
             create.isError ? `Could not create the plan: ${describeError(create.error)}` : null
           }
+          chooseUnits
           onClose={() => setCreating(false)}
-          onSubmit={(name) =>
+          onSubmit={(name, units) =>
             create.mutate(
-              { name },
+              { name, units },
               {
                 onSuccess: (plan) =>
                   navigate({ to: '/plans/$planId', params: { planId: plan.id } }),
