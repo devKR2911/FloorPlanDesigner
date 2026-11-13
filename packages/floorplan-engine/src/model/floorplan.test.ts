@@ -21,6 +21,7 @@ function squarePlan(): Plan {
     ],
     items: [{ id: 'i1', catalogKey: 'sofa', position: { x: 1, y: 1 }, elevation: 0, rotation: 0 }],
     openings: [],
+    rooms: [],
   }
 }
 

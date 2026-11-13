@@ -259,6 +259,7 @@ export class FloorplanEngine {
     if (selection.kind === 'corner') return floorplan.getCorner(selection.id) !== undefined
     if (selection.kind === 'wall') return floorplan.getWall(selection.id) !== undefined
     if (selection.kind === 'opening') return floorplan.getOpening(selection.id) !== undefined
+    if (selection.kind === 'room') return floorplan.getRoom(selection.id) !== undefined
     return floorplan.getItem(selection.id) !== undefined
   }
 

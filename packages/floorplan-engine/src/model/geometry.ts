@@ -144,6 +144,43 @@ export function pointInPolygon(p: Point, polygon: readonly Point[]): boolean {
 }
 
 /**
+ * A point inside the polygon: its centroid when that lies inside, which an L- or U-shaped room's
+ * may not, and otherwise the best of a few candidate points, judged by how far the point stands
+ * from the nearest edge. Used to anchor things to a room.
+ */
+export function insidePoint(polygon: readonly Point[]): Point {
+  if (polygon.length < 3) return centroid(polygon)
+  const middle = centroid(polygon)
+  const candidates = [middle]
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i]!
+    const b = polygon[(i + 1) % polygon.length]!
+    const c = polygon[(i + 2) % polygon.length]!
+    // The centre of each triangle of neighbouring corners, and each edge's midpoint pulled
+    // towards the centroid. Between them, one lands inside any simple polygon we draw.
+    candidates.push({ x: (a.x + b.x + c.x) / 3, y: (a.y + b.y + c.y) / 3 })
+    candidates.push({ x: (a.x + b.x + middle.x) / 3, y: (a.y + b.y + middle.y) / 3 })
+  }
+  let best: Point | null = null
+  let bestDepth = -Infinity
+  for (const candidate of candidates) {
+    if (!pointInPolygon(candidate, polygon)) continue
+    let depth = Infinity
+    for (let i = 0; i < polygon.length; i++) {
+      depth = Math.min(
+        depth,
+        distanceToSegment(candidate, polygon[i]!, polygon[(i + 1) % polygon.length]!),
+      )
+    }
+    if (depth > bestDepth) {
+      best = candidate
+      bestDepth = depth
+    }
+  }
+  return best ?? middle
+}
+
+/**
  * Moves each edge of a counter-clockwise polygon inwards by its own distance and returns the new
  * corners. Edge `i` runs from `polygon[i]` to `polygon[i + 1]` and moves by `distances[i]`.
  * Used to turn wall centrelines into the inside outline of a room.

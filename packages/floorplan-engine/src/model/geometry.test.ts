@@ -8,6 +8,7 @@ import {
   distance,
   distanceToSegment,
   insetPolygon,
+  insidePoint,
   isClockwise,
   lineIntersection,
   pointInPolygon,
@@ -188,6 +189,39 @@ describe('pointInPolygon', () => {
     ]
     expect(pointInPolygon({ x: 1.5, y: 2 }, u)).toBe(false)
     expect(pointInPolygon({ x: 0.5, y: 2 }, u)).toBe(true)
+  })
+})
+
+describe('insidePoint', () => {
+  it('uses the centroid of a convex polygon', () => {
+    expect(insidePoint(square)).toEqual(centroid(square))
+  })
+
+  it('finds a point inside a U shape whose centroid is outside', () => {
+    const u: Point[] = [
+      { x: 0, y: 0 },
+      { x: 3, y: 0 },
+      { x: 3, y: 3 },
+      { x: 2, y: 3 },
+      { x: 2, y: 1 },
+      { x: 1, y: 1 },
+      { x: 1, y: 3 },
+      { x: 0, y: 3 },
+    ]
+    const point = insidePoint(u)
+    expect(pointInPolygon(point, u)).toBe(true)
+  })
+
+  it('finds a point inside an L shape', () => {
+    const l: Point[] = [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 4, y: 1 },
+      { x: 1, y: 1 },
+      { x: 1, y: 4 },
+      { x: 0, y: 4 },
+    ]
+    expect(pointInPolygon(insidePoint(l), l)).toBe(true)
   })
 })
 

@@ -7,10 +7,13 @@ import {
   type Opening,
   type OpeningKind,
   type Plan,
+  type RoomRecord,
   type Wall,
 } from '../schema/plan.js'
 import {
   centroid,
+  insidePoint,
+  pointInPolygon,
   closestPointOnSegment,
   distance,
   insetPolygon,
@@ -51,14 +54,18 @@ export interface Room {
   /** Along the wall centrelines, in square metres. */
   readonly area: number
   readonly centroid: Point
+  /** The room's name, when one was given. */
+  readonly name?: string
 }
 
-export type FloorplanChangeKind = 'load' | 'restore' | 'corners' | 'walls' | 'items' | 'openings'
+export type FloorplanChangeKind =
+  'load' | 'restore' | 'corners' | 'walls' | 'items' | 'openings' | 'rooms'
 
 export interface FloorplanChange {
   /**
    * `walls` when the set of walls changed (corners may have changed too), `corners` when only
-   * corners did, `items` when only items did, and `openings` when only doors or windows did.
+   * corners did, `items` when only items did, `openings` when only doors or windows did, and
+   * `rooms` when only a room's name did.
    * A `corners` or `walls` change may also move the openings on the walls it touched.
    * `load` is a new plan; `restore` is an earlier state of the same plan put back, by undo.
    */
@@ -103,6 +110,10 @@ export class Floorplan {
   private readonly openingAnchors = new Map<string, Point>()
   private roomList: Room[] = []
   private roomMap = new Map<string, Room>()
+  /** Room names, by their own record id. A record names whichever room holds its anchor. */
+  private readonly roomRecords = new Map<string, RoomRecord>()
+  /** Which record names which detected room, rebuilt whenever the rooms or names change. */
+  private roomRecordByRoom = new Map<string, RoomRecord>()
   private wallSideMap = new Map<string, Partial<Record<WallSide, string>>>()
   private readonly emitter = new Emitter<FloorplanEvents>()
 
@@ -211,6 +222,8 @@ export class Floorplan {
     for (const item of structuredClone(plan.items)) this.itemMap.set(item.id, item)
     this.openingMap.clear()
     for (const opening of plan.openings) this.openingMap.set(opening.id, { ...opening })
+    this.roomRecords.clear()
+    for (const record of structuredClone(plan.rooms)) this.roomRecords.set(record.id, record)
     this.commit(kind)
   }
 
@@ -222,6 +235,7 @@ export class Floorplan {
       walls: [...this.wallMap.values()],
       items: [...this.itemMap.values()],
       openings: [...this.openingMap.values()],
+      rooms: [...this.roomRecords.values()],
     })
   }
 
@@ -573,6 +587,34 @@ export class Floorplan {
     return item
   }
 
+  /**
+   * Names the room, or renames it; an empty name removes the name. The name is kept as a record
+   * anchored to a point inside the room, so it survives the room being reshaped or moved, and
+   * lies dormant if the room's walls are removed, coming back when they are redrawn.
+   */
+  nameRoom(roomId: string, name: string): void {
+    const room = this.roomMap.get(roomId)
+    if (!room) throw new FloorplanError(`Unknown room "${roomId}"`)
+    const trimmed = name.trim()
+    if (trimmed.length > 60) throw new FloorplanError('A room name must be at most 60 characters')
+    const existing = this.roomRecordByRoom.get(roomId)
+    if (trimmed === '') {
+      if (!existing) return
+      this.roomRecords.delete(existing.id)
+      this.commit('rooms', existing.id)
+      return
+    }
+    if (existing) {
+      if (existing.name === trimmed) return
+      existing.name = trimmed
+      this.commit('rooms', existing.id)
+      return
+    }
+    const record: RoomRecord = { id: newId(), name: trimmed, anchor: insidePoint(room.polygon) }
+    this.roomRecords.set(record.id, record)
+    this.commit('rooms', record.id)
+  }
+
   private requireCorner(id: string): Corner {
     const corner = this.cornerMap.get(id)
     if (!corner) throw new FloorplanError(`Unknown corner "${id}"`)
@@ -688,6 +730,12 @@ export class Floorplan {
       this.emitter.emit('change', change(false))
       return
     }
+    // A name change moves no geometry; only the names on the rooms need matching again.
+    if (kind === 'rooms') {
+      this.applyRoomNames()
+      this.emitter.emit('change', change(false))
+      return
+    }
     this.rehomeOpenings(kind)
     const previousRoomIds = this.roomList.map((room) => room.id).join('|')
     this.recomputeRooms()
@@ -713,6 +761,30 @@ export class Floorplan {
     })
     this.roomMap = new Map(this.roomList.map((room) => [room.id, room]))
     this.wallSideMap = wallSides
+    this.applyRoomNames()
+  }
+
+  /**
+   * Matches each name record to the room holding its anchor and writes the names onto the
+   * rooms. A record whose room is gone stays dormant. Two records in one room (two rooms merged)
+   * keep their order: the older one names the room, and splitting the rooms apart revives both.
+   */
+  private applyRoomNames(): void {
+    this.roomRecordByRoom = new Map()
+    const claimed = new Set<string>()
+    for (const room of this.roomList) delete (room as { name?: string }).name
+    for (const record of this.roomRecords.values()) {
+      const room = this.roomList.find(
+        (candidate) =>
+          !claimed.has(candidate.id) && pointInPolygon(record.anchor, candidate.polygon),
+      )
+      if (!room) continue
+      claimed.add(room.id)
+      this.roomRecordByRoom.set(room.id, record)
+      ;(room as { name?: string }).name = record.name
+      // Follow the room: a room dragged elsewhere keeps its name, as openings keep their place.
+      record.anchor = insidePoint(room.polygon)
+    }
   }
 }
 
