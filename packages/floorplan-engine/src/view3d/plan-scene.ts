@@ -105,7 +105,7 @@ export class PlanScene {
     this.group.add(this.floorGroup, this.wallGroup, this.openingGroup)
     this.stopWatching = floorplan.on('change', ({ kind }) => {
       // Items have their own scene; walls and floors stay as they are.
-      if (kind === 'items' || kind === 'rooms') return
+      if (kind === 'items' || kind === 'rooms' || kind === 'units') return
       this.outOfDate = true
       if (this.active) this.rebuild()
     })

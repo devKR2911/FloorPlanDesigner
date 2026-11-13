@@ -1,10 +1,7 @@
 import type { Room } from '../model/floorplan.js'
 import type { Point } from '../model/geometry.js'
+import { formatArea, type UnitSystem } from '../model/units.js'
 import type { Viewport } from './viewport.js'
-
-export function formatArea(squareMetres: number): string {
-  return `${squareMetres.toFixed(1)} m²`
-}
 
 /** The label's text metrics are estimated, so drawing and clicking agree without a canvas. */
 const CHARACTER_WIDTH = 7
@@ -28,12 +25,12 @@ export interface RoomLabel {
  * and hit-tested, so a click lands exactly on what is shown.
  */
 export function roomLabels(
-  floorplan: { rooms: readonly Room[] },
+  floorplan: { rooms: readonly Room[]; units?: UnitSystem },
   viewport: Pick<Viewport, 'toScreen'>,
 ): RoomLabel[] {
   return floorplan.rooms.map((room) => {
     const centre = viewport.toScreen(room.centroid)
-    const area = formatArea(room.area)
+    const area = formatArea(room.area, floorplan.units)
     const lines = room.name === undefined ? [area] : [room.name, area]
     const width = Math.max(...lines.map((line) => line.length)) * CHARACTER_WIDTH + 2 * PADDING
     const height = lines.length * LINE_HEIGHT + 2 * PADDING
@@ -50,7 +47,7 @@ export function roomLabels(
 /** The room whose label is under a screen point, or `null`. */
 export function roomLabelAt(
   screen: Point,
-  floorplan: { rooms: readonly Room[] },
+  floorplan: { rooms: readonly Room[]; units?: UnitSystem },
   viewport: Pick<Viewport, 'toScreen'>,
 ): string | null {
   for (const label of roomLabels(floorplan, viewport)) {

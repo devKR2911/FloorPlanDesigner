@@ -289,7 +289,7 @@ export class View3D {
         this.invalidate()
       }),
       this.floorplan.on('change', ({ kind }) => {
-        if (kind !== 'items' && kind !== 'rooms') this.walkBlocks = null
+        if (kind !== 'items' && kind !== 'rooms' && kind !== 'units') this.walkBlocks = null
         if (kind !== 'load') return
         if (this.visible && this.mode === 'orbit') this.fit({ animate: false })
         else this.fitPending = true

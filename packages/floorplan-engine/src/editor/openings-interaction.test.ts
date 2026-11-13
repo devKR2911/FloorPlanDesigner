@@ -4,6 +4,7 @@ import { Floorplan } from '../model/floorplan.js'
 import type { Point } from '../model/geometry.js'
 import { hitTest } from './hit-testing.js'
 import { Interaction, type PointerInput } from './interaction.js'
+import { unitGrid } from '../model/units.js'
 import { defaultSnapSettings } from './snapping.js'
 import { Viewport } from './viewport.js'
 
@@ -156,5 +157,35 @@ describe('openings in delete mode', () => {
     click({ x: 1, y: 0 })
     expect(floorplan.openings).toEqual([])
     expect(floorplan.walls).toHaveLength(4)
+  })
+})
+
+describe('a plan in feet', () => {
+  const INCH = 0.0254
+  const wholeInches = (metres: number) => {
+    const count = metres / INCH
+    expect(count).toBeCloseTo(Math.round(count), 6)
+    return Math.round(count)
+  }
+
+  beforeEach(() => {
+    // What the engine does when a plan's unit becomes feet.
+    const grid = unitGrid('imperial')
+    interaction.snapping.grid = grid.snap
+    interaction.openingSnap.step = grid.openingStep
+  })
+
+  it('slides a door to a whole inch along its wall', () => {
+    const door = addDoor(1)
+    drag({ x: 1, y: 0 }, { x: 2.713, y: 0.02 })
+    expect(wholeInches(offsetOf(door))).toBe(107)
+  })
+
+  it('drags a corner to whole inches', () => {
+    const corner = floorplan.corners.find((c) => c.x === 4 && c.y === 4)!
+    drag({ x: 4, y: 4 }, { x: 5.013, y: 4.507 })
+    const moved = floorplan.getCorner(corner.id)!
+    expect(wholeInches(moved.x)).toBe(197)
+    expect(wholeInches(moved.y)).toBe(177)
   })
 })

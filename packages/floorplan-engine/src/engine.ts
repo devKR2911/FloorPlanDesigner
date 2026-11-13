@@ -18,7 +18,8 @@ import {
   type OpeningSnapSettings,
 } from './model/wall-openings.js'
 import type { ItemDefinition } from './schema/item-definition.js'
-import type { OpeningKind, Plan } from './schema/plan.js'
+import { unitGrid } from './model/units.js'
+import type { OpeningKind, Plan, UnitSystem } from './schema/plan.js'
 import type { ItemLoadError } from './view3d/item-scene.js'
 import type { ModelLoader } from './view3d/model-library.js'
 import { View3D, type View3DTheme } from './view3d/view3d.js'
@@ -52,6 +53,8 @@ export type FloorplanEngineEvents = {
   selection: Selection
   /** An item's model could not be loaded. It is shown as a box instead. */
   itemError: ItemLoadError
+  /** The plan's display unit changed: by `setUnits()`, by loading a plan, or by undo. */
+  units: UnitSystem
 }
 
 export class FloorplanEngine {
@@ -77,11 +80,16 @@ export class FloorplanEngine {
   private readonly emitter = new Emitter<FloorplanEngineEvents>()
   private readonly cleanups: (() => void)[] = []
   private disposed = false
+  /** The unit the snap steps were last set for. */
+  private appliedUnits: UnitSystem = 'metric'
+  /** True when the host gave its own corner grid step, which then is not replaced by the unit's. */
+  private readonly ownGrid: boolean
 
   constructor(options: FloorplanEngineOptions) {
     this.floorplan = new Floorplan(options.floorplan)
     this.history = new History(this.floorplan)
     this.placement = { ...defaultPlacementSettings, ...options.placement }
+    this.ownGrid = options.editor?.snapping?.grid !== undefined
     const shared = {
       floorplan: this.floorplan,
       catalog: this.catalog,
@@ -108,7 +116,37 @@ export class FloorplanEngine {
         const selection = this.selectionStore.current
         if (selection && !this.exists(selection)) this.selectionStore.set(null)
       }),
+      // The unit can change with `setUnits()`, a loaded plan or an undo; follow all three.
+      this.floorplan.on('change', () => this.applyUnits()),
     )
+  }
+
+  /**
+   * How the plan's measurements are shown and typed: metres, or feet and inches. Display only:
+   * the plan is stored and calculated in metres whichever is chosen. Furniture keeps its metric
+   * placement step in both.
+   */
+  get units(): UnitSystem {
+    return this.floorplan.units
+  }
+
+  /**
+   * Changes the plan's display unit. Walls, doors and windows then snap to that unit's steps
+   * (0.1 m, or whole inches). It is a change to the plan, so it is saved and can be undone.
+   */
+  setUnits(units: UnitSystem): void {
+    this.assertActive()
+    this.floorplan.setUnits(units)
+  }
+
+  private applyUnits(): void {
+    const { units } = this.floorplan
+    if (units === this.appliedUnits) return
+    this.appliedUnits = units
+    const grid = unitGrid(units)
+    if (this.editor && !this.ownGrid) this.editor.snapping.grid = grid.snap
+    this.openingSnap.step = grid.openingStep
+    this.emitter.emit('units', units)
   }
 
   /** What is selected, in either view. */

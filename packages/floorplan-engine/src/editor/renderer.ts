@@ -1,6 +1,7 @@
 import type { Floorplan } from '../model/floorplan.js'
 import { distance, type Point } from '../model/geometry.js'
 import { RECTANGLE_FOOTPRINT, itemFootprint } from '../model/item-geometry.js'
+import { formatLength, gridLines, unitGrid, type GridLine } from '../model/units.js'
 import { wallFootprints } from '../model/wall-footprints.js'
 import { openingOutline } from '../model/wall-openings.js'
 import type { Opening } from '../schema/plan.js'
@@ -126,8 +127,8 @@ function hoverColours(state: RenderState): { line: string; fill: string; item: s
     : { line: theme.wallHover, fill: theme.wallHoverFill, item: theme.itemHover }
 }
 
-/** Scale above which the 0.1 m grid lines are drawn. */
-const MINOR_GRID_MIN_SCALE = 60
+/** The fine grid lines are drawn once they are at least this many pixels apart. */
+const MINOR_GRID_MIN_PIXELS = 6
 /** Below this many pixels thick, a wall is drawn as its centre line only. */
 const MIN_WALL_PIXELS = 3
 const WALL_LINE_WIDTH = 2
@@ -137,11 +138,7 @@ const CORNER_RADIUS = 4
 const CORNER_RADIUS_ACTIVE = 6
 const DIMENSION_OFFSET = 14
 
-export { formatArea } from './room-labels.js'
-
-export function formatLength(metres: number): string {
-  return `${metres.toFixed(2)} m`
-}
+export { formatArea, formatLength } from '../model/units.js'
 
 /** Draws the whole plan. `ctx` must already be scaled for the device pixel ratio. */
 export function render(ctx: CanvasRenderingContext2D, state: RenderState): void {
@@ -161,25 +158,28 @@ export function render(ctx: CanvasRenderingContext2D, state: RenderState): void 
   drawPreview(ctx, state)
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, { viewport, theme }: RenderState): void {
+function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  { floorplan, viewport, theme }: RenderState,
+): void {
   const { min, max } = viewport.visibleBounds()
-  const step = viewport.scale >= MINOR_GRID_MIN_SCALE ? 0.1 : 1
+  // 1 m squares with 0.1 m lines, or 1 ft squares with 3 in lines, by the plan's unit.
+  const grid = unitGrid(floorplan.units)
+  const showMinor = grid.minor * viewport.scale >= MINOR_GRID_MIN_PIXELS - 1e-9
+  const colour = (line: GridLine): string =>
+    line.axis ? theme.axis : line.major ? theme.gridMajor : theme.gridMinor
   ctx.lineWidth = 1
-  for (let x = Math.floor(min.x / step) * step; x <= max.x; x += step) {
-    const major = Math.abs(x - Math.round(x)) < 1e-6
-    if (!major && step === 1) continue
-    const sx = Math.round(viewport.toScreen({ x, y: 0 }).x) + 0.5
-    ctx.strokeStyle = x === 0 ? theme.axis : major ? theme.gridMajor : theme.gridMinor
+  for (const line of gridLines(min.x, max.x, grid, showMinor)) {
+    const sx = Math.round(viewport.toScreen({ x: line.value, y: 0 }).x) + 0.5
+    ctx.strokeStyle = colour(line)
     ctx.beginPath()
     ctx.moveTo(sx, 0)
     ctx.lineTo(sx, viewport.height)
     ctx.stroke()
   }
-  for (let y = Math.floor(min.y / step) * step; y <= max.y; y += step) {
-    const major = Math.abs(y - Math.round(y)) < 1e-6
-    if (!major && step === 1) continue
-    const sy = Math.round(viewport.toScreen({ x: 0, y }).y) + 0.5
-    ctx.strokeStyle = y === 0 ? theme.axis : major ? theme.gridMajor : theme.gridMinor
+  for (const line of gridLines(min.y, max.y, grid, showMinor)) {
+    const sy = Math.round(viewport.toScreen({ x: 0, y: line.value }).y) + 0.5
+    ctx.strokeStyle = colour(line)
     ctx.beginPath()
     ctx.moveTo(0, sy)
     ctx.lineTo(viewport.width, sy)
@@ -465,8 +465,17 @@ function drawOpenings(ctx: CanvasRenderingContext2D, state: RenderState): void {
       // On the side the wall's own length is not written on.
       const side = sides.front && !sides.back ? 1 : -1
       ctx.fillStyle = theme.preview
-      drawLabel(ctx, viewport, start, along(from), formatLength(from), side, wall.thickness)
-      drawLabel(ctx, viewport, along(to), end, formatLength(length - to), side, wall.thickness)
+      const { units } = floorplan
+      drawLabel(ctx, viewport, start, along(from), formatLength(from, units), side, wall.thickness)
+      drawLabel(
+        ctx,
+        viewport,
+        along(to),
+        end,
+        formatLength(length - to, units),
+        side,
+        wall.thickness,
+      )
     }
   }
 }
@@ -536,7 +545,15 @@ function drawDimensions(ctx: CanvasRenderingContext2D, state: RenderState): void
     // Label the side without a room, or the back when both or neither have one.
     const sides = floorplan.roomsOf(wall.id)
     const side = sides.front && !sides.back ? -1 : 1
-    drawLabel(ctx, viewport, start, end, formatLength(distance(start, end)), side, wall.thickness)
+    drawLabel(
+      ctx,
+      viewport,
+      start,
+      end,
+      formatLength(distance(start, end), floorplan.units),
+      side,
+      wall.thickness,
+    )
   }
 }
 
@@ -612,7 +629,7 @@ function drawPreview(ctx: CanvasRenderingContext2D, state: RenderState): void {
       viewport,
       preview.anchor,
       preview.cursor,
-      formatLength(distance(preview.anchor, preview.cursor)),
+      formatLength(distance(preview.anchor, preview.cursor), state.floorplan.units),
       -1,
       0,
     )
